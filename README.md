@@ -281,7 +281,8 @@ jarvis/
 |---|---|
 | `python` not recognised | Reinstall Python with **Add to PATH** ticked |
 | App window is blank/white | Install the **[WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)** (already present on Windows 11) |
-| Window won't open at all | Jarvis falls back to your browser automatically; `pip install pywebview pythonnet` to fix |
+| **App opens the website in your browser instead of a window** | The native window failed (usually a missing/broken WebView2 Runtime). Re-run `setup.bat` — it auto-repairs WebView2 — or install the runtime manually. Jarvis now shows a pop-up explaining the reason and logs details to `jarvis-launcher.log` |
+| Window won't open at all | Jarvis falls back to your browser (with an explanation pop-up); `pip install pywebview pythonnet` to fix |
 | Brain says `offline` unexpectedly | No key and no Ollama running. Start Ollama or check `.env` |
 | `Model 'x' isn't installed` | `ollama pull llama3.2` |
 | Volume control imprecise | `pip install pycaw comtypes` |

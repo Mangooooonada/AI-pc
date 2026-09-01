@@ -35,6 +35,28 @@ if errorlevel 1 (
   echo   [!] Some packages failed. Jarvis will still run with reduced features.
 )
 
+REM ── Edge WebView2 runtime: required for the native app window ────────
+REM    Without it the app can only open in your browser ("the website").
+set "WV2KEY=HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+reg query "%WV2KEY%" /v pv >nul 2>nul
+if errorlevel 1 (
+  echo   [!] Microsoft Edge WebView2 Runtime not found.
+  echo       The desktop window needs it - trying to install it now...
+  where winget >nul 2>nul
+  if not errorlevel 1 (
+    winget install --id Microsoft.EdgeWebView2Runtime -e --silent --accept-source-agreements --accept-package-agreements
+  )
+  reg query "%WV2KEY%" /v pv >nul 2>nul
+  if errorlevel 1 (
+    echo   [!] WebView2 still missing. Jarvis will run in your browser instead.
+    echo       Install it manually: https://developer.microsoft.com/microsoft-edge/webview2
+  ) else (
+    echo   [OK] WebView2 Runtime installed - the native app window will work.
+  )
+) else (
+  echo   [OK] Edge WebView2 Runtime found.
+)
+
 if not exist ".env" (
   copy ".env.example" ".env" >nul
   echo   Created .env  ^(open it later to add an API key - optional^)
