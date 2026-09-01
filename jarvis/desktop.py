@@ -273,11 +273,16 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
     port = port or _free_port(config.port)
 
     def _serve() -> None:
-        import uvicorn
+        try:
+            import uvicorn
 
-        from .server import app
+            from .server import app
 
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="error")
+            uvicorn.run(app, host="127.0.0.1", port=port, log_level="error")
+        except Exception:
+            # Under pythonw.exe there is no console — without this the backend
+            # dies invisibly and the log only shows "Backend failed to start".
+            logger.exception("backend thread died before/during uvicorn startup")
 
     _set_app_identity()
 
@@ -333,35 +338,54 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
             pass
 
     def _handoff() -> None:
-        t0 = time.time()
-        # Stage 1 — let the GUI loop come up and paint the splash. Only after
-        # that do we start the heavy backend imports: running FastAPI/uvicorn
-        # imports *during* WebView2 init starves the message pump and Windows
-        # flags the fresh window as "Not Responding" after ~5 seconds.
-        loaded_evt = getattr(window.events, "loaded", None)
-        try:
-            if loaded_evt is not None:
-                loaded_evt.wait(20)
-        except Exception:
-            pass
-        logger.info("GUI ready after %.1fs; starting backend", time.time() - t0)
-        _splash_status("BACKEND WARMING…")
-
-        # Stage 2 — now spin up the backend.
+        # Small grace so WebView2's GUI initialisation gets first dibs on the
+        # CPU (running the import storm DURING window init is what got the
+        # window flagged "Not Responding"). Do NOT wait on window.events.loaded
+        # here: for inline-HTML windows that event doesn't fire reliably on
+        # some backends and we'd burn ~20s for nothing before even starting
+        # the backend.
+        time.sleep(1.2)
+        _splash_status("BACKEND WARMING…")  # no-op if the GUI isn't up yet
         t1 = time.time()
         threading.Thread(target=_serve, daemon=True).start()
 
-        # Stage 3 — when it answers, swap the splash for the real UI.
-        if _wait_for_server(port, timeout=45.0):
+        # Wait (up to 90s — antivirus-scanned venvs make imports crawl) with
+        # heartbeat log lines so a slow boot is visible in the log.
+        deadline = time.time() + 90.0
+        last_beat = 0.0
+        server_up = False
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    server_up = True
+                    break
+            except OSError:
+                elapsed = time.time() - t1
+                if elapsed - last_beat >= 15:
+                    last_beat = elapsed
+                    logger.info("…backend still warming (%.0fs)", elapsed)
+                    _splash_status(f"BACKEND WARMING… {int(elapsed)}s")
+                time.sleep(0.15)
+
+        if server_up:
             logger.info("Backend ready after %.1fs; handing off to the UI", time.time() - t1)
             _splash_status("LOADING INTERFACE…")
-            try:
-                window.load_url(f"http://127.0.0.1:{port}")
-                return
-            except Exception:
-                logger.exception("load_url handoff failed")
+            # load_url() raises while the GUI loop isn't accepting calls yet
+            # (and was the original stall); retry until it actually takes.
+            gui_deadline = time.time() + 40.0
+            attempt = 0
+            while time.time() < gui_deadline:
+                attempt += 1
+                try:
+                    window.load_url(f"http://127.0.0.1:{port}")
+                    logger.info("UI loaded (load_url attempt %d)", attempt)
+                    return
+                except Exception as exc:
+                    logger.info("load_url attempt %d not accepted yet: %s", attempt, exc)
+                    time.sleep(0.8)
+            logger.error("load_url was never accepted by the GUI backend")
         else:
-            logger.error("Backend failed to start on port %s within 45s", port)
+            logger.error("Backend failed to start on port %s within 90s", port)
         try:
             window.load_html(_dead_backend_html())
         except Exception:
