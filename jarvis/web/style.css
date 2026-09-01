@@ -483,6 +483,13 @@ select:hover,.btn-ghost:hover{border-color:var(--cy);color:var(--cy)}
 .st-input{background:rgba(3,14,24,.85);border:1px solid var(--line);border-radius:7px;
   padding:6px 9px;font-size:11.5px;color:var(--txt);outline:none;min-width:130px;flex:none;transition:.2s}
 .st-input:focus{border-color:var(--cy);box-shadow:0 0 12px rgba(var(--cy-rgb),calc(.18*var(--glow)))}
+.st-net{display:flex;gap:14px;align-items:center;padding:10px 2px 4px}
+.st-qr{width:112px;height:112px;border-radius:10px;border:1px solid var(--line);background:#fff;padding:6px}
+.st-net-meta{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--dim)}
+.st-net-meta code{color:var(--cy-dim);background:rgba(var(--cy-rgb),.08);padding:3px 8px;border-radius:6px;font-size:11px;word-break:break-all}
+.st-copy{align-self:flex-start;background:rgba(var(--cy-rgb),.1);border:1px solid var(--line);color:var(--txt);
+  border-radius:6px;padding:4px 10px;font-size:10px;letter-spacing:.08em;cursor:pointer;transition:.2s}
+.st-copy:hover{border-color:var(--cy);box-shadow:0 0 10px rgba(var(--cy-rgb),calc(.2*var(--glow)))}
 .st-ctl.danger span{color:var(--hot)}
 .st-ctl.danger .st-toggle.on{border-color:var(--hot);background:rgba(255,95,126,.15)}
 .st-ctl.danger .st-toggle.on::after{background:var(--hot);box-shadow:0 0 8px rgba(255,95,126,.6)}

@@ -57,6 +57,7 @@ Want it to start with Windows? Press `Win+R`, type `shell:startup`, and drop a s
 | `python main.py voice` | Hands-free: say **"Jarvis, …"** |
 | `python main.py say "lock the computer"` | One-shot command |
 | `python main.py --fullscreen` | Borderless full-screen app |
+| `python main.py --minimized` | App starts tucked into the system tray (used by Start-with-Windows) |
 | `python main.py --dev` | App window with the web inspector |
 
 ---
@@ -107,6 +108,23 @@ Three interchangeable brains, switchable live from the dropdown in **AI Core**.
    `ollama pull qwen2.5:7b` — noticeably better at using tools.*
 3. Restart Jarvis. It auto-detects it.
 
+### Living on your PC (resident mode)
+
+- **System tray** — the close button tucks Jarvis into the tray (needs `pystray`, installed by setup); the **Quit** item on the tray icon is the real off switch.
+- **Start with Windows** — Settings → App. Jarvis boots minimized with your PC.
+- **Ctrl+J anywhere** — global hotkey that summons Jarvis and starts listening (Windows).
+- **Morning briefing** — first launch of the day greets you with time, weather, open/overdue tasks and machine health, spoken aloud.
+- **Always-listening wake word** — Settings → App. The mic idles until it hears "Jarvis".
+- **Proactive nudges** — timers and due reminders interrupt you with a toast + a spoken line, even mid-chat.
+
+### Phone control (same Wi-Fi)
+
+Settings → App → **Control from my phone**: Jarvis shows a LAN URL + QR code.
+Open it on your phone and you get the full command center. Sharing binds the
+server to the network on next launch and **locks every API call behind a
+pairing key** carried by that link — your neighbours' bored teenager can't
+drive your PC. Turning it off binds Jarvis back to localhost-only.
+
 ### Interface Studio — make it yours
 
 Open **Interface Studio** in the sidebar to restyle the command center live:
@@ -138,6 +156,12 @@ restarts.
   more literal tool usage; raise it (≤0.8) for chattier, more creative replies.
 - **Thinking models** (qwen3 family): set `OLLAMA_THINK=false` if you want fast
   plain answers without visible reasoning time.
+
+### Dual brains + smart skill packing
+
+- **Dual-brain routing** — set `OLLAMA_MODEL_BIG` (Settings → Brain, e.g. `qwen3:32b`) and long/code/analysis questions are routed to the heavy model automatically; quick chatter stays on the fast daily driver. Missing model? Jarvis warns once and stays put.
+- **Skill packing** — each message only offers the ~16 most relevant skills (`JARVIS_TOOL_PACK`) instead of all 55. Less context eaten, fewer malformed tool calls out of small models. Memory, identity and web search are always packed.
+- **Vision** — `OLLAMA_VISION_MODEL` (Settings → Brain) or auto-detected `llava`/`qwen3-vl`/`moondream` power *"what's on my screen?"*.
 
 ### Making Jarvis feel faster
 
@@ -190,7 +214,7 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 
 ---
 
-## What it can do — 51 skills
+## What it can do — 55 skills
 
 | Area | Say something like |
 |---|---|
@@ -199,10 +223,11 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 | **Media** | "play music", "next track", "play Daft Punk on YouTube", "play lo-fi on Spotify" |
 | **System** | "system status", "list processes by memory", "empty the recycle bin" |
 | **Power** | "lock the computer", "sleep", "shut down in 60 seconds", "cancel shutdown" |
-| **Screen** | "take a screenshot" |
+| **Screen & eyes** | "take a screenshot", "what's on my screen?" *(needs a vision model: `ollama pull llava`)* |
+| **Clipboard** | "what's on my clipboard", "summarize my clipboard", "copy that to my clipboard" |
 | **Files** | "what's in my downloads folder", "find files named invoice", "clean my downloads", "take a note: buy cables" |
 | **Tasks** | "add a task finish the report at 5pm", "what are my tasks", "mark report as done" |
-| **Memory** | "remember that I prefer dark mode", "what do you know about me" |
+| **Memory** | "remember that I prefer dark mode", "what do you know about me", "what's my name" |
 | **Workflows** | "run workflow Focus Mode", "brief me" |
 | **Web** | "what's the weather", "what's the news", "who is Ada Lovelace", "google mechanical keyboards", "read the page https://…" |
 | **Security** | "security report", "scan for viruses", "check for suspicious processes", "startup audit", "disable startup item Spotify" |

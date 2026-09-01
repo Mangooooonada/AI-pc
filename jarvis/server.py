@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -79,6 +79,25 @@ class MemoryIn(BaseModel):
 
 
 # ------------------------------------------------------------------- core --
+@app.middleware("http")
+async def _network_guard(request: Request, call_next):
+    """When network sharing is on, non-local devices need the pairing key.
+
+    Pages stay public; every /api/* call from a non-loopback client must
+    carry the key (?key=… from the QR link, then the UI sends X-Jarvis-Key).
+    """
+    if config.network and config.net_key and request.url.path.startswith("/api"):
+        client = request.client.host if request.client else ""
+        if client not in {"127.0.0.1", "::1", "localhost"}:
+            key = request.query_params.get("key") or request.headers.get("x-jarvis-key")
+            if key != config.net_key:
+                return JSONResponse(
+                    {"ok": False, "error": "locked — open the QR-code link from Settings on that device"},
+                    status_code=403,
+                )
+    return await call_next(request)
+
+
 @app.get("/api/status")
 def status() -> Dict[str, Any]:
     ag = get_agent()
@@ -314,6 +333,79 @@ def set_autostart(body: AutostartIn) -> Dict[str, Any]:
         return {"ok": True, "enabled": body.enabled}
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# ---------------------------------------------------- phone / LAN mode ----
+def _lan_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 80))  # no traffic is actually sent
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return socket.gethostname()
+
+
+def _network_info(request=None) -> Dict[str, Any]:
+    port = config.port
+    if request is not None:
+        try:
+            port = int(str(request.url.port or request.headers.get("host", "").split(":")[-1]))
+        except (TypeError, ValueError):
+            pass
+    url = ""
+    if config.network:
+        url = f"http://{_lan_ip()}:{port}" + (f"?key={config.net_key}" if config.net_key else "")
+    qr = None
+    if url:
+        try:
+            import base64
+            import io
+
+            import qrcode  # type: ignore
+
+            img = qrcode.make(url)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            qr = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            qr = None
+    return {
+        "enabled": config.network,
+        "locked": bool(config.net_key),
+        "url": url,
+        "qr": qr,
+    }
+
+
+@app.get("/api/network")
+def get_network(request: Request) -> Dict[str, Any]:
+    return _network_info(request)
+
+
+class NetworkIn(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/network")
+def set_network(body: NetworkIn, request: Request) -> Dict[str, Any]:
+    if body.enabled and not config.net_key:
+        import secrets
+
+        config.net_key = secrets.token_urlsafe(9)
+        update_env_file({"JARVIS_NET_KEY": config.net_key})
+    config.network = bool(body.enabled)
+    update_env_file({"JARVIS_NETWORK": "1" if config.network else "0"})
+    info = _network_info(request)
+    info["ok"] = True
+    info["note"] = (
+        "Network sharing is ON. Fully live on next launch — reopen Jarvis, then "
+        "point your phone (same Wi-Fi) at the URL or QR below."
+        if config.network
+        else "Network sharing off. Jarvis binds back to this PC only on next launch."
+    )
+    return info
 
 
 # ------------------------------------------------ proactive nudge loop ----
@@ -663,4 +755,12 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
         _watcher_started = True
         threading.Thread(target=_nudge_watcher, daemon=True, name="nudge-watcher").start()
 
-    uvicorn.run(app, host=host or config.host, port=port or config.port, log_level="warning")
+    # Default to loopback-only; LAN binding is an explicit Settings choice
+    # (network sharing) or an explicit JARVIS_HOST in .env.
+    import os
+
+    explicit_host = bool((os.environ.get("JARVIS_HOST") or "").strip())
+    bind = host or (
+        config.host if explicit_host else ("0.0.0.0" if config.network else "127.0.0.1")
+    )
+    uvicorn.run(app, host=bind, port=port or config.port, log_level="warning")

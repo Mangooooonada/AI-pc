@@ -3,6 +3,25 @@
    ══════════════════════════════════════════════════════════════ */
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
+
+/* Phone/LAN pairing: the QR link carries ?key=… — keep it and send it on
+   every API call so network mode's lock accepts us. */
+(() => {
+  const fromUrl = new URLSearchParams(location.search).get("key");
+  if (fromUrl) {
+    localStorage.setItem("jarvis.key", fromUrl);
+    history.replaceState({}, "", location.pathname);  // don't leave it in history
+  }
+  const rawFetch = window.fetch.bind(window);
+  window.fetch = (url, opts = {}) => {
+    const key = localStorage.getItem("jarvis.key");
+    if (key && typeof url === "string" && url.startsWith("/api")) {
+      opts = { ...opts, headers: { ...(opts.headers || {}), "X-Jarvis-Key": key } };
+    }
+    return rawFetch(url, opts);
+  };
+})();
+
 const api = async (path, opts) => (await fetch(path, opts)).json();
 const post = (path, body) =>
   api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -217,8 +236,15 @@ async function loadSettings() {
   // App-side setting that only lives in the browser: read replies aloud.
   const speakOn = localStorage.getItem("jarvis.speak") !== "off";
   const listenOn = localStorage.getItem("jarvis.listen") === "on";
-  let bootState = null;
+  let bootState = null, netState = null;
   try { bootState = await api("/api/autostart"); } catch {}
+  try { netState = await api("/api/network"); } catch {}
+  const netQr = netState?.enabled && netState.url
+    ? `<div class="st-net">${netState.qr ? `<img src="${netState.qr}" alt="QR" class="st-qr">` : ""}
+       <div class="st-net-meta"><code>${esc(netState.url)}</code>
+         <button type="button" class="st-copy" id="net-copy">copy link</button>
+         <span>Same Wi-Fi only. Locked with a pairing key${netState.qr ? "" : " (install the qrcode package for the QR)"}. Takes full effect next launch.</span></div></div>`
+    : "";
   chunks.push(`<div class="st-group"><h3>App</h3><div class="st-rows">
     <label class="st-ctl"><span>Read Jarvis's replies aloud (browser voice)</span>
       <button type="button" class="st-toggle ${speakOn ? "on" : ""}" id="set-speak"></button></label>
@@ -226,6 +252,9 @@ async function loadSettings() {
       <button type="button" class="st-toggle ${listenOn ? "on" : ""}" id="set-listen"></button></label>${bootState && bootState.supported ? `
     <label class="st-ctl"><span>Start with Windows (tucks into the tray)</span>
       <button type="button" class="st-toggle ${bootState.enabled ? "on" : ""}" id="set-boot"></button></label>` : ""}
+    <label class="st-ctl"><span>Control from my phone (local network)</span>
+      <button type="button" class="st-toggle ${netState?.enabled ? "on" : ""}" id="set-net"></button></label>
+    ${netQr}
   </div><p class="st-note" style="margin-top:8px">Closing the window hides Jarvis to the <b>system tray</b> (quit from its icon). <b>Ctrl+J</b> summons Jarvis from anywhere. Theme, colours, glow and layout live in the <b>Interface Studio</b> (top right button).</p></div>`);
 
   for (const sec of d.sections) {
@@ -269,6 +298,21 @@ async function loadSettings() {
     const r = await post("/api/autostart", { enabled: on });
     if (r.ok) { e.currentTarget.classList.toggle("on", on); toast(on ? "Jarvis will start with Windows, tucked into the tray." : "Autostart off."); }
     else toast(r.error || "Couldn't change autostart", "err");
+  };
+
+  $("#set-net").onclick = async (e) => {
+    const on = !e.currentTarget.classList.contains("on");
+    const r = await post("/api/network", { enabled: on });
+    if (r.ok) {
+      e.currentTarget.classList.toggle("on", on);
+      toast(on ? "Phone control on — locked with a pairing key. Live after one relaunch." : "Phone control off (next launch).");
+      loadSettings();  // re-render so the QR row appears/disappears
+    } else toast(r.error || "Couldn't change network sharing", "err");
+  };
+  const copyBtn = $("#net-copy");
+  if (copyBtn) copyBtn.onclick = async () => {
+    try { await navigator.clipboard.writeText(netState.url); toast("Link copied — open it on your phone."); }
+    catch { toast(netState.url); }
   };
 
   const save = async (key, value) => {
