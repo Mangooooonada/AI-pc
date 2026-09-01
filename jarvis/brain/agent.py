@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -27,6 +28,9 @@ class Agent:
     def __init__(self, provider: Optional[str] = None) -> None:
         self.provider, self.provider_errors = get_provider(provider)
         self.history: List[Dict[str, Any]] = []
+        # Serializes conversations: desktop + phone + a scheduled routine all
+        # hitting at once must queue, not interleave the history.
+        self._busy = threading.Lock()
 
     # -- state -------------------------------------------------------------
     @property
@@ -56,6 +60,15 @@ class Agent:
 
     # -- main loop ---------------------------------------------------------
     def ask(
+        self,
+        text: str,
+        on_action: Optional[Callable[[str, str], None]] = None,
+        on_token: Optional[Callable[[str], None]] = None,
+    ) -> Turn:
+        with self._busy:
+            return self._ask_unlocked(text, on_action, on_token)
+
+    def _ask_unlocked(
         self,
         text: str,
         on_action: Optional[Callable[[str, str], None]] = None,

@@ -420,14 +420,38 @@ def set_network(body: NetworkIn, request: Request) -> Dict[str, Any]:
 _watcher_started = False
 
 
+def _routine_worker(r: Dict[str, Any]) -> None:
+    """Run one routine through the real agent loop, then report back.
+
+    Takes the agent busy-lock WITHOUT waiting — if the user is mid-chat the
+    routine just defers to the next watcher tick ('it waits for you')."""
+    ag = get_agent()
+    if not ag._busy.acquire(blocking=False):
+        return
+    try:
+        turn = ag._ask_unlocked(r["prompt"])
+        summary = " ".join((turn.reply or "").split())[:240] or "(no response)"
+        state.record_routine_run(r["id"], not turn.error, summary)
+        label = "Routine" if not turn.error else "Routine (with warnings)"
+        state.add_notification(f"🕐 {label} '{r['name']}': {summary}")
+    except Exception as exc:
+        state.record_routine_run(r["id"], False, f"{type(exc).__name__}: {exc}")
+        state.add_notification(f"🕐 Routine '{r['name']}' failed: {exc}")
+    finally:
+        ag._busy.release()
+
+
 def _nudge_watcher() -> None:
-    """Scan for due reminders/timers and enqueue UI notifications.
+    """Scan for due reminders/timers AND fire due routines.
 
     Tasks already past their 'due' time that were never announced get one
     notification each; timers enqueue their own from the skill that fires
-    them. Runs forever as a daemon — silent on any error.
+    them; routines run through the full agent loop and report back via
+    notifications. Runs forever as a daemon — silent on any error.
     """
     import time as _time
+
+    from .routines import due as _routine_due
 
     while True:
         _time.sleep(20)
@@ -444,6 +468,9 @@ def _nudge_watcher() -> None:
                 if due_dt <= now:
                     state.add_notification(f"Reminder: {t['title']}")
                     state.mark_task_notified(t["id"])
+            for r in state.list_routines():
+                if _routine_due(r, now):
+                    threading.Thread(target=_routine_worker, args=(r,), daemon=True).start()
         except Exception:
             pass
 
@@ -715,6 +742,61 @@ def clear_conversations() -> Dict[str, Any]:
     state.clear_conversations()
     get_agent().reset()
     return {"ok": True}
+
+
+# ------------------------------------------------------------- routines ----
+class RoutineIn(BaseModel):
+    name: str = ""
+    schedule_text: str = ""
+    prompt: str
+
+
+@app.get("/api/routines")
+def get_routines() -> Dict[str, Any]:
+    from .routines import human
+
+    return {
+        "routines": [
+            {**r, "schedule_human": human(r.get("schedule", {}))}
+            for r in state.list_routines()
+        ]
+    }
+
+
+@app.post("/api/routines")
+def make_routine(body: RoutineIn) -> Dict[str, Any]:
+    from .routines import human, parse_schedule
+
+    prompt = (body.prompt or "").strip()
+    if not prompt:
+        return {"ok": False, "error": "A routine needs steps — what should Jarvis do?"}
+    sched = parse_schedule(body.schedule_text)
+    if not sched:
+        return {
+            "ok": False,
+            "error": "Couldn't read the schedule — try 'every morning', 'every day at 5pm', "
+                     "'every 2 hours', 'every monday at 9am' or 'in 30 minutes'.",
+        }
+    routine = state.add_routine(body.name or "Routine", prompt, sched)
+    return {
+        "ok": True,
+        "routine": routine,
+        "note": f"Saved — fires {human(sched)}. It'll defer politely while you're chatting.",
+    }
+
+
+@app.delete("/api/routines/{routine_id}")
+def drop_routine(routine_id: str) -> Dict[str, Any]:
+    return {"ok": state.delete_routine(routine_id)}
+
+
+@app.post("/api/routines/{routine_id}/run")
+def run_routine_now(routine_id: str) -> Dict[str, Any]:
+    r = state.get_routine(routine_id)
+    if not r:
+        return {"ok": False, "error": f"No routine '{routine_id}'."}
+    threading.Thread(target=_routine_worker, args=(r,), daemon=True).start()
+    return {"ok": True, "note": f"'{r['name']}' is running — it'll report back when done."}
 
 
 # -------------------------------------------------------------- workflows --

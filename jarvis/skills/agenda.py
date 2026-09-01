@@ -249,6 +249,107 @@ def run_workflow(name: str) -> str:
 
 
 @skill(
+    "create_routine",
+    "Create a scheduled routine: a job Jarvis runs by itself on a schedule and "
+    "reports back on. Schedule in plain English: 'every morning', 'every day at 5pm', "
+    "'every 2 hours', 'every monday at 9am', 'in 30 minutes'.",
+    {
+        "type": "object",
+        "properties": {
+            "schedule": {"type": "string", "description": "When to run, plain English"},
+            "prompt": {"type": "string", "description": "What Jarvis should do each run"},
+            "name": {"type": "string", "description": "Short name, e.g. 'Morning mail check'"},
+        },
+        "required": ["schedule", "prompt"],
+    },
+    triggers=["every {schedule} {prompt}",
+              "create a routine: {schedule}", "set a routine: {schedule}"],
+)
+def create_routine(schedule: str = "", prompt: str = "", name: str = "") -> str:
+    from ..routines import human, parse_schedule
+
+    # Offline trigger "every {schedule} {prompt}" can mis-split at word one
+    # ("every day at 5pm …" → schedule="day"). Re-split the combined tail at
+    # the first recognizable time phrase, which is the real boundary.
+    sched_text, steps = (schedule or "").strip(), (prompt or "").strip()
+    trust = (
+        bool(sched_text)
+        and sched_text.startswith(("every", "daily", "at ", "in ", "tomorrow"))
+        and parse_schedule(sched_text) is not None
+        and bool(steps)
+    )
+    if not trust:
+        combined = ("every " + sched_text + " " + steps).strip() if sched_text and not sched_text.startswith(("every", "daily", "at ", "in ", "tomorrow")) else f"{sched_text} {steps}".strip()
+        # split at the END of the first recognizable time phrase; narrower
+        # clock patterns win over broad ones regardless of position
+        tm = None
+        for pat in (
+            r"\bat\s+\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)\b"
+            r"|\b\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)\b"
+            r"|\b(?:[01]?\d|2[0-3])[:.][0-5]\d\b",
+            r"\bin\s+\d+\s+(?:minutes?|mins?|hours?|hrs?|days?)\b"
+            r"|\bevery\s+\d+\s+(?:minutes?|mins?|hours?|hrs?)\b"
+            r"|\b(?:every\s+)?(?:morning|afternoon|evening|night)\b"
+            r"|\b(?:every\s+)?(?:mon|tues|wednes|thurs|fri|satur|sun)days?\b"
+            r"|\b(?:every day|daily|every hour|hourly)\b",
+        ):
+            tm = re.search(pat, combined, re.I)
+            if tm:
+                break
+        if tm:
+            sched_text = combined[: tm.end()].strip()
+            tail = combined[tm.end():].strip(" ,")
+            if tail:
+                steps = tail
+    sched = parse_schedule(sched_text)
+    if not sched:
+        return ("I couldn't make out when. Try: 'every morning', 'every day at 5pm', "
+                "'every 2 hours', 'every monday at 9am', or 'in 30 minutes'.")
+    if not steps.strip():
+        return "What should the routine actually do? Give me the steps in plain words."
+    state.add_routine(name or "Routine", steps.strip(), sched)
+    return f"Routine saved — fires {human(sched)}. It runs with my full brain and reports back here."
+
+
+@skill(
+    "list_routines",
+    "List the scheduled routines Jarvis runs automatically.",
+    {"type": "object", "properties": {}},
+    triggers=["list my routines", "what routines do i have", "show my routines"],
+)
+def list_routines() -> str:
+    from ..routines import human
+
+    routines = state.list_routines()
+    if not routines:
+        return "No routines yet. Say e.g. 'every morning brief me on my tasks'."
+    rows = ["Your routines:"]
+    for r in routines:
+        last = r.get("last_run") or "never run yet"
+        rows.append(
+            f"  • {r['name']} — {human(r.get('schedule', {}))} "
+            f"[{r['id']}]  (last: {last}; {'on' if r.get('enabled', True) else 'done'})"
+        )
+    return "\n".join(rows)
+
+
+@skill(
+    "delete_routine",
+    "Delete a scheduled routine by name or id.",
+    {
+        "type": "object",
+        "properties": {"routine": {"type": "string", "description": "Routine name or id"}},
+        "required": ["routine"],
+    },
+    triggers=["delete the routine {routine}", "remove routine {routine}", "stop routine {routine}"],
+)
+def delete_routine(routine: str = "") -> str:
+    if state.delete_routine((routine or "").strip()):
+        return f"Routine '{routine}' removed."
+    return f"No routine matching '{routine}'."
+
+
+@skill(
     "list_workflows",
     "List the saved workflows that can be run.",
     {"type": "object", "properties": {}},

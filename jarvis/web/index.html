@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <meta name="theme-color" content="#03080f">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>JARVIS Command Center</title>
@@ -258,6 +261,14 @@
 
   <!-- ─── WORKFLOWS ─── -->
   <section class="view" data-view="workflows">
+    <div class="card full">
+      <div class="card-h"><h2>Routines</h2>
+        <button class="mini" id="rt-add">+ new routine</button></div>
+      <div class="wf-grid" id="rt-grid"></div>
+      <p class="dim" style="margin:2px 2px 12px;font-size:11px">
+        Routines run on their own — through the full agent brain — and report back as toasts + voice.
+        Missing a slot while the PC sleeps fires once at wake, never in bursts.</p>
+    </div>
     <div class="card full">
       <div class="card-h"><h2>Workflows</h2></div>
       <div class="wf-grid" id="wf-grid"></div>

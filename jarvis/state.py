@@ -319,6 +319,66 @@ def mark_task_notified(task_id: str) -> bool:
     return False
 
 
+# -------------------------------------------------------------- routines ---
+def add_routine(name: str, prompt: str, schedule: Dict[str, Any]) -> Dict[str, Any]:
+    routine = {
+        "id": str(uuid.uuid4())[:8],
+        "name": (name or "").strip() or "Routine",
+        "prompt": (prompt or "").strip(),
+        "schedule": schedule,          # {"kind": "daily"|"interval"|"weekly"|"once", ...}
+        "enabled": True,
+        "last_run": None,              # ISO string of last completed run
+        "runs": [],                    # soft history: [{"at":..., "ok":bool, "summary":...}]
+        "created": _now(),
+    }
+    with _LOCK:
+        _STATE.setdefault("routines", []).append(routine)
+        if len(_STATE["routines"]) > 50:
+            _STATE["routines"] = _STATE["routines"][-50:]
+    save()
+    return routine
+
+
+def list_routines() -> List[Dict[str, Any]]:
+    with _LOCK:
+        return [dict(r) for r in _STATE.setdefault("routines", [])]
+
+
+def get_routine(routine_id: str) -> Optional[Dict[str, Any]]:
+    for r in list_routines():
+        if r["id"] == routine_id or r["name"].lower() == routine_id.lower():
+            return r
+    return None
+
+
+def record_routine_run(routine_id: str, ok: bool, summary: str) -> None:
+    with _LOCK:
+        for r in _STATE.setdefault("routines", []):
+            if r["id"] == routine_id:
+                r["last_run"] = _now()
+                r.setdefault("runs", []).append(
+                    {"at": _now(), "ok": bool(ok), "summary": summary[:400]}
+                )
+                r["runs"] = r["runs"][-10:]
+                if r["schedule"].get("kind") == "once":
+                    r["enabled"] = False
+                break
+    save()
+
+
+def delete_routine(routine_id: str) -> bool:
+    with _LOCK:
+        routines = _STATE.setdefault("routines", [])
+        before = len(routines)
+        _STATE["routines"] = [
+            r for r in routines if r["id"] != routine_id and r["name"].lower() != routine_id.lower()
+        ]
+        changed = len(_STATE["routines"]) != before
+    if changed:
+        save()
+    return changed
+
+
 # -------------------------------------------------------------- workflows --
 def list_workflows() -> List[Dict[str, Any]]:
     with _LOCK:

@@ -760,8 +760,34 @@ function renderSkills(filter) {
   }));
 }
 
+async function loadRoutines() {
+  const { routines } = await api("/api/routines");
+  const grid = $("#rt-grid");
+  grid.innerHTML = routines.length ? routines.map((r) =>
+    `<div class="wf"><h3>🕐 ${esc(r.name)}</h3>
+       <p>${esc(r.schedule_human)} · ${r.enabled ? "on" : "done"} · last: ${esc(r.last_run || "never")}</p>
+       <p class="dim" style="font-size:11px">${esc(r.prompt.slice(0, 120))}</p>
+       <div style="display:flex;gap:8px">
+         <button class="wf-run" data-rt-run="${r.id}">▶ Run now</button>
+         <button class="wf-run st-danger" data-rt-del="${r.id}">✕</button>
+       </div>${r.runs?.length ? `<p class="dim" style="font-size:10.5px;margin-top:6px">last run: ${esc((r.runs[r.runs.length-1].summary || "").slice(0, 140))}</p>` : ""}</div>`
+  ).join("") : `<p class="dim">No routines yet — try “every morning brief me on my tasks” in chat, or + new routine.</p>`;
+  $$("[data-rt-run]").forEach((b) => (b.onclick = async () => {
+    b.textContent = "Running…";
+    const r = await post(`/api/routines/${b.dataset.rtRun}/run`);
+    toast(r.note || r.error, r.ok ? "good" : "err");
+    setTimeout(loadRoutines, 1200);
+  }));
+  $$("[data-rt-del]").forEach((b) => (b.onclick = async () => {
+    b.textContent = "…";
+    await fetch(`/api/routines/${b.dataset.rtDel}`, { method: "DELETE" });
+    toast("Routine removed."); loadRoutines();
+  }));
+}
+
 async function loadWorkflows() {
   const { workflows } = await api("/api/workflows");
+  loadRoutines();
   setCount("workflows", workflows.length);
   $("#wf-grid").innerHTML = workflows.map((w) =>
     `<div class="wf"><h3>${esc(w.name)}</h3><p>${esc(w.description)}</p>
@@ -950,6 +976,7 @@ function say(text) {
     || vs.find((v) => /en-GB/i.test(v.lang)) || vs.find((v) => /en/i.test(v.lang));
   if (pick) u.voice = pick;
   u.rate = 1.03; u.pitch = 0.92;
+  if (WAKE_WANT && !LISTENING && !WAKE_LOOP) startWakeLoop();  // barge-in: ears stay on while I speak
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
 
@@ -990,7 +1017,11 @@ function startWakeLoop() {
   const wake = (STATUS.wake_word || "jarvis").toLowerCase();
   WAKE_LOOP.onresult = (e) => {
     const tail = Array.from(e.results).slice(-2).map((r) => r[0].transcript).join(" ").toLowerCase();
-    if (tail.includes(wake)) { WAKE_LOOP._hot = true; try { WAKE_LOOP.stop(); } catch {} }
+    if (tail.includes(wake)) {
+      WAKE_LOOP._hot = true;
+      speechSynthesis?.cancel();   // barging in: silence the reply instantly
+      try { WAKE_LOOP.stop(); } catch {}
+    }
   };
   WAKE_LOOP.onend = () => {
     const hot = WAKE_LOOP && WAKE_LOOP._hot;
@@ -1081,6 +1112,16 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
   $("#brief-btn").onclick = () => sendMessage("executive briefing", true);
   $("#btn-reset").onclick = async () => { await post("/api/reset"); $("#log").innerHTML = ""; bubble("bot", "Context cleared."); };
   $("#btn-clear-convos").onclick = async () => { await fetch("/api/conversations", { method: "DELETE" }); loadConversations(); };
+  $("#rt-add").onclick = async () => {
+    const schedule = prompt("When should it run? (e.g. 'every morning', 'every day at 5pm', 'every 2 hours', 'monday 9am')", "every morning");
+    if (!schedule) return;
+    const promptText = prompt("What should Jarvis do each run? (plain words)", "Brief me on my tasks and the weather");
+    if (!promptText) return;
+    const name = prompt("Name this routine:", "Morning briefing") || "Routine";
+    const r = await post("/api/routines", { name, schedule_text: schedule, prompt: promptText });
+    toast(r.note || r.error, r.ok ? "good" : "err");
+    if (r.ok) loadRoutines();
+  };
   $("#theme-reset").onclick = () => { THEME.values = { ...THEME_DEFAULTS }; applyTheme(); buildStudio(); toast("Theme reset to the Jarvis default."); };
   $("#theme-copy").onclick = async () => {
     try { await navigator.clipboard.writeText(JSON.stringify(THEME.values, null, 2)); toast("Theme copied to the clipboard."); }
@@ -1173,4 +1214,6 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
 
   // Always-listening wake word, if the user armed it.
   if (localStorage.getItem("jarvis.listen") === "on") setTimeout(startWakeLoop, 1500);
+
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js").catch(() => {});
 })();
