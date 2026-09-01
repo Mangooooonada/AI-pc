@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JARVIS Command Center</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="scanlines"></div>
+<div class="vignette"></div>
+
+<!-- ══════════════════════════ SIDEBAR ══════════════════════════ -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" class="lm-r1"/><circle cx="24" cy="24" r="13" class="lm-r2"/><circle cx="24" cy="24" r="5" class="lm-core"/></svg>
+    </div>
+    <div class="logo-text">
+      <h1>JARVIS</h1>
+      <span>COMMAND CENTER</span>
+    </div>
+  </div>
+
+  <nav id="nav"></nav>
+
+  <div class="voice-status">
+    <div class="vs-head"><span>VOICE STATUS</span><i>›</i></div>
+    <canvas id="voice-wave" height="42"></canvas>
+    <div class="vs-label" id="voice-label">Standby</div>
+    <button class="mic-orb" id="mic-orb" title="Click to speak">
+      <span class="orb-ring"></span>
+      <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-3.08A7 7 0 0 0 19 12Z"/></svg>
+    </button>
+    <div class="vs-sub">Tap to Speak</div>
+  </div>
+
+  <button class="focus-btn" id="focus-btn"><span>✦</span> Focus Mode</button>
+</aside>
+
+<!-- ══════════════════════════ TOP BAR ══════════════════════════ -->
+<header class="topbar">
+  <div class="sys-pill" id="sys-pill">
+    <span class="lbl">SYSTEM STATUS</span>
+    <span class="val"><i class="blip"></i> <b id="sys-state">BOOTING</b></span>
+  </div>
+
+  <div class="clock-block">
+    <div class="date" id="date">—</div>
+    <div class="time" id="clock">--:--:--</div>
+  </div>
+
+  <div class="top-tools">
+    <div class="search">
+      <svg viewBox="0 0 24 24"><path d="M10 18a8 8 0 1 1 5.3-2L21 21.7 19.7 23l-5.7-5.7A8 8 0 0 1 10 18Zm0-2a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z"/></svg>
+      <input id="search" placeholder="Search skills, tasks, memory…" />
+      <kbd>/</kbd>
+    </div>
+    <button class="ticon" id="btn-grid" title="Command Center">
+      <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3Zm10 0h8v8h-8V3ZM3 13h8v8H3v-8Zm10 0h8v8h-8v-8Z"/></svg>
+    </button>
+    <button class="ticon" id="btn-bell" title="Intelligence feed">
+      <svg viewBox="0 0 24 24"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6v-5a7 7 0 0 0-5.5-6.83V3.5a1.5 1.5 0 1 0-3 0v.67A7 7 0 0 0 5 11v5l-2 2v1h18v-1Z"/></svg>
+      <i class="badge" id="feed-badge">0</i>
+    </button>
+    <button class="ticon" id="btn-settings" title="Settings">
+      <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Zm7.4-2.5a7.6 7.6 0 0 0 .1-1 7.6 7.6 0 0 0-.1-1l2-1.6a.5.5 0 0 0 .1-.6l-1.9-3.2a.5.5 0 0 0-.6-.2l-2.4 1a7.3 7.3 0 0 0-1.7-1l-.4-2.5a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4l-.4 2.5a7.3 7.3 0 0 0-1.7 1l-2.4-1a.5.5 0 0 0-.6.2L2.5 8.8a.5.5 0 0 0 .1.6L4.6 11a7.6 7.6 0 0 0 0 2l-2 1.6a.5.5 0 0 0-.1.6l1.9 3.2a.5.5 0 0 0 .6.2l2.4-1a7.3 7.3 0 0 0 1.7 1l.4 2.5a.5.5 0 0 0 .5.4h3.8a.5.5 0 0 0 .5-.4l.4-2.5a7.3 7.3 0 0 0 1.7-1l2.4 1a.5.5 0 0 0 .6-.2l1.9-3.2a.5.5 0 0 0-.1-.6Z"/></svg>
+    </button>
+    <div class="operator" id="operator">
+      <div class="op-text"><b>Operator</b><span id="op-role">Commander</span></div>
+      <div class="op-avatar"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z"/></svg></div>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════════ VIEWS ══════════════════════════ -->
+<main class="stage" id="stage">
+
+  <!-- ─── COMMAND CENTER ─── -->
+  <section class="view active" data-view="command">
+    <div class="dash">
+      <!-- AI core overview -->
+      <div class="card a-overview">
+        <div class="card-h"><h2>AI Core Overview</h2></div>
+        <div class="ov-list" id="ov-list"></div>
+      </div>
+
+      <!-- globe -->
+      <div class="card a-globe">
+        <canvas id="globe"></canvas>
+        <div class="globe-label">
+          <h3>JARVIS</h3>
+          <span>AI CORE</span>
+          <em id="core-version">v1.0.0</em>
+        </div>
+        <div class="globe-corner tl"></div><div class="globe-corner tr"></div>
+        <div class="globe-corner bl"></div><div class="globe-corner br"></div>
+      </div>
+
+      <!-- intelligence feed -->
+      <div class="card a-feed">
+        <div class="card-h"><h2>Live Intelligence Feed</h2><span class="live-tag"><i></i>LIVE</span></div>
+        <div class="feed" id="feed"></div>
+        <button class="card-more" data-goto="conversations">View All Intelligence ›</button>
+      </div>
+
+      <!-- agents -->
+      <div class="card a-agents">
+        <div class="card-h"><h2>Active Agents</h2><button class="card-more inline" data-goto="agents">View All ›</button></div>
+        <div class="agent-grid" id="agent-grid"></div>
+      </div>
+
+      <!-- timeline -->
+      <div class="card a-timeline">
+        <div class="card-h"><h2>Mission Timeline</h2><span class="chip-sm">Today</span></div>
+        <div class="timeline" id="timeline"></div>
+        <button class="card-more" data-goto="calendar">View Full Schedule ›</button>
+      </div>
+
+      <!-- quick commands -->
+      <div class="card a-quick">
+        <div class="card-h"><h2>Quick Commands</h2></div>
+        <div class="quick" id="quick"></div>
+      </div>
+
+      <!-- system monitor -->
+      <div class="card a-monitor">
+        <div class="card-h"><h2>System Monitor</h2><span class="chip-sm" id="uptime">—</span></div>
+        <div class="dials">
+          <div class="dial" data-key="cpu"><svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="40"/><circle class="fill" cx="50" cy="50" r="40"/></svg><div class="dial-c"><b>—</b><span>CPU</span></div></div>
+          <div class="dial" data-key="memory"><svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="40"/><circle class="fill" cx="50" cy="50" r="40"/></svg><div class="dial-c"><b>—</b><span>RAM</span></div></div>
+          <div class="dial" data-key="disk"><svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="40"/><circle class="fill" cx="50" cy="50" r="40"/></svg><div class="dial-c"><b>—</b><span>DISK</span></div></div>
+        </div>
+      </div>
+
+      <!-- memory insights -->
+      <div class="card a-memory">
+        <div class="card-h"><h2>Memory Insights</h2></div>
+        <div class="mem-body">
+          <canvas id="mem-graph"></canvas>
+          <div class="mem-stats">
+            <div><b id="mem-total">0</b><span>Memories</span></div>
+            <div><b id="mem-turns">0</b><span>Session Turns</span></div>
+            <div><b id="mem-tools">0</b><span>Tool Calls</span></div>
+          </div>
+        </div>
+        <button class="card-more" data-goto="memory">View Memory Map ›</button>
+      </div>
+
+      <!-- llm status -->
+      <div class="card a-llm">
+        <div class="card-h"><h2>LLM Status</h2><span class="chip-sm" id="llm-count">—</span></div>
+        <div class="llm-grid" id="llm-grid"></div>
+        <button class="card-more" data-goto="aicore">Manage Providers ›</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── AI CORE / CHAT ─── -->
+  <section class="view" data-view="aicore">
+    <div class="split">
+      <div class="card chat-card">
+        <div class="card-h">
+          <h2>AI Core — Conversation</h2>
+          <div class="row-tools">
+            <select id="provider">
+              <option value="auto">Brain: Auto</option>
+              <option value="openai">OpenAI / compatible</option>
+              <option value="ollama">Ollama (local)</option>
+              <option value="offline">Offline engine</option>
+            </select>
+            <button class="btn-ghost" id="btn-reset">Clear</button>
+          </div>
+        </div>
+        <div class="log" id="log"></div>
+        <form class="composer" id="composer" autocomplete="off">
+          <button type="button" class="mic-sm" id="mic-sm" title="Voice input">
+            <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-3.08A7 7 0 0 0 19 12Z"/></svg>
+          </button>
+          <input id="input" placeholder="Give an order, or just talk…" />
+          <button type="submit" class="btn-send">Transmit</button>
+        </form>
+      </div>
+      <div class="card side-card">
+        <div class="card-h"><h2>Provider Status</h2></div>
+        <div class="llm-list" id="llm-list"></div>
+        <div class="card-h mt"><h2>Core Directives</h2></div>
+        <ul class="kv" id="directives"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── AGENTS ─── -->
+  <section class="view" data-view="agents">
+    <div class="card full">
+      <div class="card-h"><h2>Agent Roster</h2><span class="chip-sm" id="agent-count">—</span></div>
+      <div class="agent-grid big" id="agent-grid-full"></div>
+    </div>
+  </section>
+
+  <!-- ─── TASKS ─── -->
+  <section class="view" data-view="tasks">
+    <div class="card full">
+      <div class="card-h"><h2>Task Board</h2><span class="chip-sm" id="task-count">—</span></div>
+      <form class="inline-form" id="task-form">
+        <input id="task-title" placeholder="New task…" />
+        <input id="task-due" placeholder="When? e.g. 5pm, tomorrow 9am, in 30 minutes" />
+        <button class="btn-send" type="submit">Add</button>
+      </form>
+      <div class="list" id="task-list"></div>
+    </div>
+  </section>
+
+  <!-- ─── CALENDAR ─── -->
+  <section class="view" data-view="calendar">
+    <div class="card full">
+      <div class="card-h"><h2>Mission Schedule</h2></div>
+      <div class="timeline big" id="timeline-full"></div>
+    </div>
+  </section>
+
+  <!-- ─── MEMORY ─── -->
+  <section class="view" data-view="memory">
+    <div class="card full">
+      <div class="card-h"><h2>Long-Term Memory</h2><span class="chip-sm" id="memory-count">—</span></div>
+      <form class="inline-form" id="mem-form">
+        <input id="mem-text" placeholder="Store a fact — “I prefer dark mode”, “my dog is called Nova”…" />
+        <button class="btn-send" type="submit">Store</button>
+      </form>
+      <div class="list" id="memory-list"></div>
+    </div>
+  </section>
+
+  <!-- ─── CONVERSATIONS ─── -->
+  <section class="view" data-view="conversations">
+    <div class="card full">
+      <div class="card-h"><h2>Conversation Log</h2><button class="btn-ghost" id="btn-clear-convos">Purge</button></div>
+      <div class="list" id="convo-list"></div>
+    </div>
+  </section>
+
+  <!-- ─── KNOWLEDGE BASE ─── -->
+  <section class="view" data-view="knowledge">
+    <div class="card full">
+      <div class="card-h"><h2>Knowledge Base</h2></div>
+      <div class="kb" id="kb"></div>
+    </div>
+  </section>
+
+  <!-- ─── TOOLS & SKILLS ─── -->
+  <section class="view" data-view="tools">
+    <div class="card full">
+      <div class="card-h"><h2>Tools &amp; Skills</h2><span class="chip-sm" id="tool-count">—</span></div>
+      <input class="filter" id="skill-filter" placeholder="Filter skills…" />
+      <div class="skill-groups" id="skill-groups"></div>
+    </div>
+  </section>
+
+  <!-- ─── WORKFLOWS ─── -->
+  <section class="view" data-view="workflows">
+    <div class="card full">
+      <div class="card-h"><h2>Workflows</h2></div>
+      <div class="wf-grid" id="wf-grid"></div>
+    </div>
+  </section>
+</main>
+
+<!-- ══════════════════════════ STATUS BAR ══════════════════════════ -->
+<footer class="statusbar">
+  <div class="sb-left">
+    <div class="sb-item"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 14.5 9 2.5 2.5 0 0 1 12 11.5Z"/></svg><span><i>Location</i><b id="sb-location">…</b></span></div>
+    <div class="sb-item"><svg viewBox="0 0 24 24"><path d="M12 17a5 5 0 1 1 5-5 5 5 0 0 1-5 5Zm0-13v3m0 14v3M4 12H1m22 0h-3M5.6 5.6 3.5 3.5m17 17-2.1-2.1m0-12.8 2.1-2.1M5.6 18.4l-2.1 2.1" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg><span><i>Weather</i><b id="sb-weather">…</b></span></div>
+    <div class="sb-item"><svg viewBox="0 0 24 24"><path d="M12 20a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6Zm-4.3-4.6 1.5 1.5a4 4 0 0 1 5.6 0l1.5-1.5a6.2 6.2 0 0 0-8.6 0Zm-3-3 1.5 1.5a8.2 8.2 0 0 1 11.6 0l1.5-1.5a10.4 10.4 0 0 0-14.6 0Z"/></svg><span><i>Network</i><b id="sb-network">…</b></span></div>
+  </div>
+
+  <button class="talk-bar" id="talk-bar">
+    <canvas class="talk-wave" id="talk-wave-l" height="26"></canvas>
+    <div class="talk-text"><b>TALK TO JARVIS</b><span id="talk-sub">Click or press Space</span></div>
+    <canvas class="talk-wave" id="talk-wave-r" height="26"></canvas>
+  </button>
+
+  <div class="sb-right">
+    <button class="brief-btn" id="brief-btn"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></svg> Executive Briefing</button>
+  </div>
+</footer>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
