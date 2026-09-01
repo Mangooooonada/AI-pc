@@ -66,7 +66,17 @@ class Agent:
         on_token: Optional[Callable[[str], None]] = None,
     ) -> Turn:
         with self._busy:
-            return self._ask_unlocked(text, on_action, on_token)
+            turn = self._ask_unlocked(text, on_action, on_token)
+        try:  # usage stats: which brain actually answered
+            from .. import state as _st
+            label = (turn.provider or "").lower()
+            key = ("route_offline" if "offline" in label else
+                   "route_local" if ("local" in label or "ollama" in label) else
+                   "route_cloud")
+            _st.bump_stat(key)
+        except Exception:
+            pass
+        return turn
 
     def _ask_unlocked(
         self,
@@ -181,6 +191,12 @@ class Agent:
 
             for call in calls:
                 output = run_skill(call["name"], call["arguments"])
+                try:  # usage stats: tool success rate
+                    from .. import state as _st
+                    failed = output.startswith(("That skill failed:", "I don't have a skill"))
+                    _st.bump_stat("tools_fail" if failed else "tools_ok")
+                except Exception:
+                    pass
                 actions.append(
                     {"skill": call["name"], "arguments": call["arguments"], "result": output}
                 )

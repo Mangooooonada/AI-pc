@@ -22,7 +22,9 @@ DEFAULT: Dict[str, Any] = {
     "memories": [],
     "conversations": [],
     "workflows": [],
-    "stats": {"tool_calls": 0, "session_turns": 0, "boot_count": 0},
+    "stats": {"tool_calls": 0, "session_turns": 0, "boot_count": 0,
+              "route_local": 0, "route_cloud": 0, "route_offline": 0,
+              "tools_ok": 0, "tools_fail": 0, "usage_since": None},
     "created": None,
 }
 
@@ -38,6 +40,8 @@ def _load() -> Dict[str, Any]:
             for k, v in DEFAULT.items():
                 data.setdefault(k, v if not isinstance(v, (list, dict)) else type(v)())
             data.setdefault("stats", dict(DEFAULT["stats"]))
+            for _k, _v in DEFAULT["stats"].items():
+                data["stats"].setdefault(_k, _v)
             return data
         except Exception:
             pass
@@ -247,6 +251,17 @@ def clear_conversations() -> None:
 def stats() -> Dict[str, Any]:
     with _LOCK:
         return dict(_STATE["stats"])
+
+
+def bump_stat(*keys: str) -> None:
+    """Increment usage counters (routes taken, tool success). Silent."""
+    with _LOCK:
+        st = _STATE["stats"]
+        if not st.get("usage_since"):
+            st["usage_since"] = _now()[:10]
+        for k in keys:
+            st[k] = int(st.get(k) or 0) + 1
+    save()
 
 
 def bump_boot() -> None:

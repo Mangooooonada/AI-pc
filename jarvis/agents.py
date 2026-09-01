@@ -153,6 +153,16 @@ def core_overview(provider_name: str, model: str) -> List[Dict[str, Any]]:
         {"key": "skills", "label": "Skills", "value": f"{len(REGISTRY)} loaded", "state": "ok"},
         {"key": "turns", "label": "Session", "value": f"{st.get('session_turns', 0)} turns",
          "state": "ok"},
+        {"key": "routes", "label": "Brain Routes",
+         "value": (f"local {st.get('route_local', 0)} · cloud {st.get('route_cloud', 0)}"
+                   f" · offline {st.get('route_offline', 0)}"),
+         "state": "ok"},
+        {"key": "toolrate", "label": "Tool Success",
+         "value": (
+             f"{round(100 * st.get('tools_ok', 0) / max(1, st.get('tools_ok', 0) + st.get('tools_fail', 0)))}%"
+             f" ({st.get('tools_ok', 0)}/{(st.get('tools_ok', 0) + st.get('tools_fail', 0))})"
+             if (st.get("tools_ok", 0) + st.get("tools_fail", 0)) else "no calls yet"),
+         "state": "ok" if st.get("tools_fail", 0) == 0 else "warn"},
     ]
 
 
