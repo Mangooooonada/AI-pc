@@ -345,6 +345,7 @@ jarvis/
 | Window won't open at all | Jarvis falls back to your browser (with an explanation pop-up); `pip install pywebview pythonnet` to fix |
 | Brain says `offline` unexpectedly | No key and no Ollama running. Start Ollama or check `.env` (a one-off Ollama error no longer sticks — the next message retries it automatically). Look at the **AI Core notes** for the exact reason |
 | Ollama is running but Jarvis stays `offline` | Jarvis now self-heals: if the configured model isn't pulled, it automatically uses the best model you *do* have and tells you in the AI Core notes (e.g. "'llama3.2' isn't pulled; using 'qwen2.5:7b'"). Pin your choice with `OLLAMA_MODEL=` in `.env` |
+| Chat dies with `Ollama error 400: ... can't find closing '}' symbol` | The model emitted a half-written tool call (Ollama rejects the whole request when that happens). Jarvis now automatically retries that turn without skills, so you get an answer instead of an error — the retry is logged in the console. If it keeps happening, switch models in **Settings ⚙** (`llama3.1:8b` / `qwen3:8b` are the most reliable at skills) and raise the Ollama context size there |
 | `Model 'x' isn't installed` | `ollama pull llama3.2` — or just let Jarvis auto-pick an installed one |
 | Volume control imprecise | `pip install pycaw comtypes` |
 | Mic does nothing | Allow microphone access when prompted; WebView2 must be up to date |

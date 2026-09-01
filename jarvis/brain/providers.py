@@ -7,10 +7,13 @@ Each provider exposes chat(messages, tools) -> dict with keys:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from ..config import config
+
+log = logging.getLogger(__name__)
 
 
 class ProviderError(RuntimeError):
@@ -157,6 +160,9 @@ class OllamaProvider:
         configured = (config.ollama_model or "").strip()
         self.model = configured
         self.note: Optional[str] = None
+        # Set to True when Ollama says the model "does not support tools" —
+        # we then quietly run without skills for the rest of the session.
+        self._no_tools = False
         if not config.ollama_available():
             raise ProviderError(
                 f"Ollama isn't reachable at {self.host}. Start it with 'ollama serve'."
@@ -201,9 +207,19 @@ class OllamaProvider:
             for m in installed
         )
 
-    def chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
-        import requests
+    # Ollama parses model output for tool calls with a brace-matching
+    # heuristic; a truncated or malformed call makes the whole REQUEST fail
+    # with HTTP 400 "Value looks like object, but can't find closing '}'
+    # symbol". Small models do this often; deep conversations with big tool
+    # schemas make truncation more likely.
+    _TOOL_PARSE_SIGNS = ("closing '}'", "looks like object")
+    _NO_TOOLS_NUDGE = (
+        "Tool use is unavailable right now. Answer the user's last message "
+        "directly in plain prose — no JSON, no code blocks, no curly braces."
+    )
 
+    def _build_payload(self, messages: List[Dict], tools: Optional[List[Dict]],
+                       stream: bool) -> Dict[str, Any]:
         # Ollama's API doesn't accept OpenAI's "tool_call_id" field.
         clean: List[Dict[str, Any]] = []
         for m in messages:
@@ -214,24 +230,74 @@ class OllamaProvider:
         payload: Dict[str, Any] = {
             "model": self.model,
             "messages": clean,
-            "stream": False,
+            "stream": stream,
             "keep_alive": config.ollama_keep_alive,
             "options": {
                 "temperature": config.temperature,
                 "num_ctx": config.ollama_num_ctx,
             },
         }
-        if config.ollama_think in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
-            payload["think"] = config.ollama_think in {"true", "1", "yes", "on"}
-        if tools:
+        think_cfg = str(config.ollama_think or "").strip().lower()
+        if think_cfg in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+            payload["think"] = think_cfg in {"true", "1", "yes", "on"}
+        if tools and not self._no_tools:
             payload["tools"] = tools
-        r = requests.post(f"{self.host}/api/chat", json=payload, timeout=180)
+            # Thinking + tools is a buggy combo upstream: qwen3's brace-heavy
+            # reasoning gets mistaken for tool calls → the HTTP 400 above.
+            # Unless the user asked for thinking explicitly, keep it off here.
+            if "think" not in payload and "qwen3" in self.model.lower():
+                payload["think"] = False
+        return payload
+
+    def _post_chat(self, payload: Dict[str, Any]):
+        import requests
+
+        stream = bool(payload.get("stream"))
+        url = f"{self.host}/api/chat"
+        r = requests.post(url, json=payload, timeout=180, stream=stream)
+        if r.status_code == 400 and "tools" in payload:
+            low = r.text.lower()
+            if "does not support tools" in low:
+                # This model has no tool template at all — remember it and
+                # quietly run without skills for the rest of the session.
+                self._no_tools = True
+                log.warning(
+                    "ollama: '%s' does not support tools; skills disabled for this session",
+                    self.model,
+                )
+                payload = {k: v for k, v in payload.items() if k != "tools"}
+                r = requests.post(url, json=payload, timeout=180, stream=stream)
+            elif any(s in low for s in self._TOOL_PARSE_SIGNS):
+                # The model fumbled one tool call. Retry that turn letting it
+                # answer directly, instead of turning a bad generation into a
+                # chat-stopping error. (No tools → no parser → no 400.)
+                log.warning(
+                    "ollama: malformed tool call from '%s'; retrying without tools",
+                    self.model,
+                )
+                payload = {k: v for k, v in payload.items() if k != "tools"}
+                payload["messages"] = payload["messages"] + [
+                    {"role": "system", "content": self._NO_TOOLS_NUDGE}
+                ]
+                r = requests.post(url, json=payload, timeout=180, stream=stream)
         if r.status_code == 404:
             raise ProviderError(
                 f"Model '{self.model}' isn't installed. Run: ollama pull {self.model}"
             )
         if r.status_code >= 400:
+            if any(s in r.text.lower() for s in self._TOOL_PARSE_SIGNS):
+                raise ProviderError(
+                    f"'{self.model}' keeps emitting malformed tool calls and Ollama "
+                    "rejects the replies (HTTP 400). Skills are unavailable this turn — "
+                    "try again, switch models in Settings (llama3.1:8b / qwen3:8b handle "
+                    "skills most reliably), or raise the Ollama context size there."
+                )
             raise ProviderError(f"Ollama error {r.status_code}: {r.text[:200]}")
+        return r
+
+    def chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        payload = self._build_payload(messages, tools, stream=False)
+        r = self._post_chat(payload)
         msg = r.json().get("message", {})
         calls = [
             {
@@ -245,36 +311,8 @@ class OllamaProvider:
 
     def chat_stream(self, messages: List[Dict], tools: Optional[List[Dict]], on_token) -> Dict[str, Any]:
         """NDJSON-streaming variant: on_token(text) fires as words arrive."""
-        import json
-        import requests
-
-        clean: List[Dict[str, Any]] = []
-        for m in messages:
-            c = {k: v for k, v in m.items() if k in {"role", "content", "tool_calls", "images"}}
-            if c.get("content") is None:
-                c["content"] = ""
-            clean.append(c)
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "messages": clean,
-            "stream": True,
-            "keep_alive": config.ollama_keep_alive,
-            "options": {
-                "temperature": config.temperature,
-                "num_ctx": config.ollama_num_ctx,
-            },
-        }
-        if config.ollama_think in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
-            payload["think"] = config.ollama_think in {"true", "1", "yes", "on"}
-        if tools:
-            payload["tools"] = tools
-        r = requests.post(f"{self.host}/api/chat", json=payload, timeout=180, stream=True)
-        if r.status_code == 404:
-            raise ProviderError(
-                f"Model '{self.model}' isn't installed. Run: ollama pull {self.model}"
-            )
-        if r.status_code >= 400:
-            raise ProviderError(f"Ollama error {r.status_code}: {r.text[:200]}")
+        payload = self._build_payload(messages, tools, stream=True)
+        r = self._post_chat(payload)
 
         content_parts: List[str] = []
         tool_calls: List[Dict[str, Any]] = []
