@@ -36,8 +36,175 @@ const ICON = {
   camera:'<path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3Zm3 5a6 6 0 1 1-6 6 6 6 0 0 1 6-6Z"/>',
   power:'<path d="M11 2v10h2V2Zm-3.6 3A9 9 0 1 0 21 12a9 9 0 0 0-3.4-7l-1.4 1.5A7 7 0 1 1 8.8 6.5Z"/>',
   check:'<path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4Z"/>',
+  palette:'<path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2a2 2 0 0 1 2-2h2.5A4.5 4.5 0 0 0 22 11c-.5-5-4.7-9-10-9Zm-5.5 9A1.5 1.5 0 1 1 8 9.5 1.5 1.5 0 0 1 6.5 11Zm3-4A1.5 1.5 0 1 1 11 5.5 1.5 1.5 0 0 1 9.5 7Zm5 0A1.5 1.5 0 1 1 16 5.5 1.5 1.5 0 0 1 14.5 7Zm3 4a1.5 1.5 0 1 1 1.5-1.5 1.5 1.5 0 0 1-1.5 1.5Z"/>',
 };
 const svg = (k) => `<svg viewBox="0 0 24 24">${ICON[k] || ICON.core}</svg>`;
+
+/* ───────────────────── interface studio (theming) ───────────────────── */
+const THEME_FIELDS = [
+  ["Accents", [
+    { k: "accent",     label: "Accent (primary)", type: "color" },
+    { k: "accentDeep", label: "Accent (deep)",    type: "color" },
+    { k: "accentDim",  label: "Accent (dim)",     type: "color" },
+  ]],
+  ["Background", [
+    { k: "bg0",        label: "Base background", type: "color" },
+    { k: "glowTop",    label: "Glow — top",      type: "color" },
+    { k: "glowBottom", label: "Glow — bottom",   type: "color" },
+    { k: "panelTint",  label: "Panel tint",      type: "color" },
+  ]],
+  ["Text", [
+    { k: "text",  label: "Text",       type: "color" },
+    { k: "muted", label: "Muted text", type: "color" },
+    { k: "dim",   label: "Faint text", type: "color" },
+  ]],
+  ["Status colours", [
+    { k: "ok",     label: "Success",            type: "color" },
+    { k: "warn",   label: "Warning",            type: "color" },
+    { k: "hot",    label: "Danger / recording", type: "color" },
+    { k: "violet", label: "Violet accent",      type: "color" },
+    { k: "amber",  label: "Amber accent",       type: "color" },
+  ]],
+  ["Finish", [
+    { k: "panelOpacity", label: "Panel opacity",    type: "range", min: 0.2, max: 1,  step: 0.01, fmt: (v) => Math.round(v * 100) + "%" },
+    { k: "glow",         label: "Glow intensity",   type: "range", min: 0,   max: 2,  step: 0.05, fmt: (v) => "×" + (+v).toFixed(2) },
+    { k: "radius",       label: "Corner roundness", type: "range", min: 0,   max: 20, step: 1,    fmt: (v) => v + "px" },
+    { k: "fontSize",     label: "Text size",        type: "range", min: 12,  max: 17, step: 0.5,  fmt: (v) => v + "px" },
+  ]],
+  ["Layout", [
+    { k: "sidebar",   label: "Sidebar width",     type: "range", min: 200, max: 330, step: 2, fmt: (v) => v + "px" },
+    { k: "topbar",    label: "Top bar height",    type: "range", min: 50,  max: 86,  step: 1, fmt: (v) => v + "px" },
+    { k: "statusbar", label: "Bottom bar height", type: "range", min: 46,  max: 80,  step: 1, fmt: (v) => v + "px" },
+  ]],
+  ["Effects", [
+    { k: "scanlines",   label: "Scanline overlay",  type: "toggle" },
+    { k: "scanOpacity", label: "Scanline strength", type: "range", min: 0, max: 0.9, step: 0.05, fmt: (v) => Math.round(v * 100) + "%" },
+    { k: "vignette",    label: "Vignette",          type: "toggle" },
+    { k: "motion",      label: "Animations",        type: "toggle" },
+  ]],
+];
+
+const THEME_DEFAULTS = {
+  accent: "#3ce0ff", accentDeep: "#12a8cf", accentDim: "#1c6b85",
+  bg0: "#020610", glowTop: "#072a44", glowBottom: "#06202f", panelTint: "#070a18",
+  text: "#d3ecf8", muted: "#5f8ba6", dim: "#3d6479",
+  ok: "#38f5a8", warn: "#ffb545", hot: "#ff5f7e", violet: "#a06bff", amber: "#ffcf5c",
+  panelOpacity: 0.72, glow: 1, radius: 12, fontSize: 14,
+  sidebar: 262, topbar: 64, statusbar: 60,
+  scanlines: true, scanOpacity: 0.5, vignette: true, motion: true,
+};
+
+const THEME_PRESETS = [
+  ["Jarvis Classic", {}],
+  ["Iron Legion", { accent: "#ff5340", accentDeep: "#c22a1c", accentDim: "#7c2a1e", bg0: "#0a0304", glowTop: "#3d0f0a", glowBottom: "#260a06", panelTint: "#180a08", text: "#ffe9e0", muted: "#a6756b", dim: "#6e463c", hot: "#ff8a3d" }],
+  ["Matrix Ops", { accent: "#41ff8f", accentDeep: "#14b85c", accentDim: "#1d7a4a", bg0: "#010a05", glowTop: "#06341c", glowBottom: "#042313", panelTint: "#05170d", text: "#d9ffe9", muted: "#5f8f74", dim: "#3a6649", hot: "#ff5f7e" }],
+  ["Ultraviolet", { accent: "#b07aff", accentDeep: "#7c4fd0", accentDim: "#5a3a8f", bg0: "#08031a", glowTop: "#241040", glowBottom: "#150a2b", panelTint: "#0e0722", text: "#eee6ff", muted: "#8b7bb3", dim: "#584a7a" }],
+  ["Solar Dusk", { accent: "#ffb545", accentDeep: "#cf7a12", accentDim: "#8f5d1c", bg0: "#0d0703", glowTop: "#3a2408", glowBottom: "#241605", panelTint: "#171008", text: "#ffefd9", muted: "#a68a63", dim: "#6e5a3c" }],
+];
+
+const THEME_KEY = "jarvis.theme.v1";
+const THEME = { values: { ...THEME_DEFAULTS }, rgb: {} };
+
+function hexRgb(h) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(h || "").trim());
+  if (!m) return [255, 255, 255];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const lighten = (rgb, t) => rgb.map((c) => Math.round(c + (255 - c) * t));
+const mixRgbStr = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t)).join(",");
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const trgba = (rgb, a) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${clamp01(a)})`;
+
+function applyTheme(save = true) {
+  const v = THEME.values, s = document.documentElement.style;
+  const acc = hexRgb(v.accent), deep = hexRgb(v.accentDeep), dimc = hexRgb(v.accentDim);
+  const pan = hexRgb(v.panelTint);
+  THEME.rgb = {
+    acc, deep, dim: dimc,
+    ok: hexRgb(v.ok), warn: hexRgb(v.warn), hot: hexRgb(v.hot),
+    violet: hexRgb(v.violet), amber: hexRgb(v.amber),
+    lite: lighten(acc, 0.55), liteHot: lighten(hexRgb(v.hot), 0.35),
+  };
+  s.setProperty("--cy", v.accent);            s.setProperty("--cy-rgb", acc.join(","));
+  s.setProperty("--cy-2", v.accentDeep);      s.setProperty("--cy-dim", v.accentDim);
+  s.setProperty("--bg-0", v.bg0);             s.setProperty("--glow-1", v.glowTop);
+  s.setProperty("--glow-2", v.glowBottom);
+  s.setProperty("--panel", trgba(pan, v.panelOpacity));
+  s.setProperty("--panel-2", `rgba(${mixRgbStr(pan, acc, 0.28)},${clamp01(v.panelOpacity * 0.78)})`);
+  s.setProperty("--txt", v.text);             s.setProperty("--muted", v.muted);
+  s.setProperty("--dim", v.dim);
+  s.setProperty("--ok", v.ok);                s.setProperty("--warn", v.warn);
+  s.setProperty("--hot", v.hot);              s.setProperty("--violet", v.violet);
+  s.setProperty("--amber", v.amber);
+  s.setProperty("--line", trgba(acc, 0.16));  s.setProperty("--line-2", trgba(acc, 0.3));
+  s.setProperty("--glow", +v.glow);
+  s.setProperty("--rc", v.radius + "px");     s.setProperty("--rm", Math.max(0, +v.radius - 3) + "px");
+  s.setProperty("--sb", v.sidebar + "px");    s.setProperty("--top", v.topbar + "px");
+  s.setProperty("--bot", v.statusbar + "px"); s.setProperty("--fs", v.fontSize + "px");
+  document.body.classList.toggle("no-scan", !v.scanlines);
+  document.body.classList.toggle("no-vig", !v.vignette);
+  document.body.classList.toggle("calm", !v.motion);
+  const scan = document.querySelector(".scanlines");
+  if (scan) scan.style.opacity = v.scanlines ? v.scanOpacity : 0;
+  if (save) localStorage.setItem(THEME_KEY, JSON.stringify(v));
+}
+
+function initTheme() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(THEME_KEY) || "{}");
+    Object.assign(THEME.values, THEME_DEFAULTS, saved);
+  } catch { /* corrupt theme blob → defaults */ }
+  applyTheme(false);
+}
+
+function buildStudio() {
+  const root = $("#studio");
+  if (!root) return;
+  const v = THEME.values;
+  const flat = THEME_FIELDS.flatMap(([, fs]) => fs);
+  const ctl = (f) => {
+    if (f.type === "color")
+      return `<label class="st-ctl"><span>${f.label}</span><code data-lab="${f.k}">${v[f.k]}</code><input type="color" data-tk="${f.k}" value="${v[f.k]}"></label>`;
+    if (f.type === "range")
+      return `<label class="st-ctl"><span>${f.label}</span><b data-lab="${f.k}">${f.fmt(+v[f.k])}</b><input type="range" data-tk="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${v[f.k]}"></label>`;
+    return `<label class="st-ctl"><span>${f.label}</span><button type="button" class="st-toggle ${v[f.k] ? "on" : ""}" data-tk="${f.k}" title="${f.label}"></button></label>`;
+  };
+  root.innerHTML =
+    `<div class="st-presets">${THEME_PRESETS.map(([n], i) => {
+      const pv = { ...THEME_DEFAULTS, ...THEME_PRESETS[i][1] };
+      return `<button type="button" class="st-preset" data-preset="${i}"><i style="background:linear-gradient(135deg,${pv.accent} 0 55%,${pv.bg0} 55% 100%)"></i>${n}</button>`;
+    }).join("")}</div>` +
+    THEME_FIELDS.map(([g, fields]) =>
+      `<div class="st-group"><h3>${g}</h3><div class="st-rows">${fields.map(ctl).join("")}</div></div>`).join("") +
+    `<p class="st-note">Every change applies instantly and is stored on this machine (<code>localStorage</code>),
+     so your theme survives restarts. <b>Copy theme</b> exports it as JSON — paste it on another PC to move it.</p>`;
+
+  root.querySelectorAll("[data-preset]").forEach((b) => (b.onclick = () => {
+    const i = +b.dataset.preset;
+    THEME.values = { ...THEME_DEFAULTS, ...THEME_PRESETS[i][1] };
+    applyTheme(); buildStudio();
+    toast(`Theme applied: ${THEME_PRESETS[i][0]}`);
+  }));
+  root.querySelectorAll('input[type="color"][data-tk]').forEach((el) => (el.oninput = () => {
+    THEME.values[el.dataset.tk] = el.value;
+    const lab = root.querySelector(`[data-lab="${el.dataset.tk}"]`);
+    if (lab) lab.textContent = el.value;
+    applyTheme();
+  }));
+  root.querySelectorAll('input[type="range"][data-tk]').forEach((el) => (el.oninput = () => {
+    const f = flat.find((x) => x.k === el.dataset.tk);
+    THEME.values[el.dataset.tk] = parseFloat(el.value);
+    const lab = root.querySelector(`[data-lab="${el.dataset.tk}"]`);
+    if (lab && f) lab.textContent = f.fmt(parseFloat(el.value));
+    applyTheme();
+  }));
+  root.querySelectorAll(".st-toggle[data-tk]").forEach((el) => (el.onclick = () => {
+    THEME.values[el.dataset.tk] = !THEME.values[el.dataset.tk];
+    el.classList.toggle("on", !!THEME.values[el.dataset.tk]);
+    applyTheme();
+  }));
+}
 
 /* ─────────────────────────── navigation ─────────────────────────── */
 const NAV = [
@@ -51,6 +218,7 @@ const NAV = [
   ["knowledge", "Knowledge Base", "book"],
   ["tools", "Tools & Skills", "tools"],
   ["workflows", "Workflows", "flow"],
+  ["studio", "Interface Studio", "palette"],
 ];
 
 function buildNav() {
@@ -66,7 +234,7 @@ function go(view) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.dataset.view === view));
   const loader = { tasks: loadTasks, calendar: loadTasks, memory: loadMemory,
     conversations: loadConversations, tools: loadSkills, workflows: loadWorkflows,
-    agents: loadAgents, aicore: loadLLMs, knowledge: renderKB }[view];
+    agents: loadAgents, aicore: loadLLMs, knowledge: renderKB, studio: buildStudio }[view];
   if (loader) loader();
   if (view === "aicore") setTimeout(() => $("#input").focus(), 60);
 }
@@ -105,20 +273,24 @@ function initGlobe() {
   size();
 
   function draw() {
-    t += 0.0032;
+    const T = THEME.rgb.acc || [60, 224, 255];
+    const GL = (v => (Number.isFinite(v) ? v : 1))(+THEME.values.glow);
+    const LITE = THEME.rgb.lite || [160, 240, 255];
+    const faint = GL || 0.35;               // keep structure readable at 0 glow
+    t += THEME.values.motion ? 0.0032 : 0;
     ctx.clearRect(0, 0, W, H);
     const cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.36;
     if (R <= 0) return requestAnimationFrame(draw);
 
     // halo
     const g = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.7);
-    g.addColorStop(0, "rgba(60,224,255,.13)");
-    g.addColorStop(0.55, "rgba(30,140,190,.05)");
+    g.addColorStop(0, trgba(T, 0.13 * faint));
+    g.addColorStop(0.55, trgba(THEME.rgb.deep || [30, 140, 190], 0.05 * faint));
     g.addColorStop(1, "transparent");
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
     // equator + orbit rings
-    ctx.strokeStyle = "rgba(60,224,255,.22)"; ctx.lineWidth = 1;
+    ctx.strokeStyle = trgba(T, 0.22 * faint); ctx.lineWidth = 1;
     for (const [rx, ry, rot] of [[1.35, .42, t * .5], [1.18, .3, -t * .35], [1.5, .2, t * .22]]) {
       ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
       ctx.beginPath(); ctx.ellipse(0, 0, R * rx, R * ry, 0, 0, Math.PI * 2); ctx.stroke();
@@ -147,7 +319,7 @@ function initGlobe() {
         if (b[2] < -0.15) continue;
         const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
         if (d < R * 0.24) {
-          ctx.strokeStyle = `rgba(60,224,255,${0.1 * (1 - d / (R * 0.24)) * (a[2] + 1)})`;
+          ctx.strokeStyle = trgba(T, 0.1 * (1 - d / (R * 0.24)) * (a[2] + 1));
           ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
         }
       }
@@ -155,7 +327,7 @@ function initGlobe() {
     // nodes
     for (const [x, y, z] of proj) {
       const depth = (z + 1) / 2;
-      ctx.fillStyle = `rgba(${120 + 90 * depth},${230},${255},${0.18 + depth * 0.62})`;
+      ctx.fillStyle = trgba(LITE, 0.18 + depth * 0.62);
       ctx.beginPath(); ctx.arc(x, y, 0.7 + depth * 1.3, 0, 6.283); ctx.fill();
     }
     // travelling arcs
@@ -166,9 +338,9 @@ function initGlobe() {
       if (A[2] < 0 && B[2] < 0) continue;
       const x = A[0] + (B[0] - A[0]) * arc.p;
       const y = A[1] + (B[1] - A[1]) * arc.p - Math.sin(arc.p * Math.PI) * R * 0.22;
-      ctx.fillStyle = "rgba(160,240,255,.95)";
+      ctx.fillStyle = trgba(LITE, 0.95);
       ctx.beginPath(); ctx.arc(x, y, 1.9, 0, 6.283); ctx.fill();
-      ctx.shadowBlur = 10; ctx.shadowColor = "#3ce0ff";
+      ctx.shadowBlur = 10 * (GL || 0.35); ctx.shadowColor = THEME.values.accent;
       ctx.fill(); ctx.shadowBlur = 0;
     }
     requestAnimationFrame(draw);
@@ -179,7 +351,7 @@ function initGlobe() {
 /* ─────────────────────────── waveforms ─────────────────────────── */
 function waveform(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
-  const bars = opts.bars || 34, color = opts.color || "#3ce0ff";
+  const bars = opts.bars || 34;
   let t = 0, amp = 0.12, dpr = Math.min(devicePixelRatio || 1, 2);
   function size() {
     canvas.width = canvas.clientWidth * dpr;
@@ -190,8 +362,10 @@ function waveform(canvas, opts = {}) {
   size();
   function frame() {
     const W = canvas.clientWidth, H = canvas.clientHeight;
+    const colIdle = opts.color || THEME.values.accent || "#3ce0ff";
+    const colLive = trgba(THEME.rgb.liteHot || [255, 143, 164], 0.95);
     ctx.clearRect(0, 0, W, H);
-    t += 0.09;
+    if (THEME.values.motion) t += 0.09;
     const target = LISTENING ? 0.92 : opts.idle ?? 0.16;
     amp += (target - amp) * 0.09;
     const bw = W / bars;
@@ -200,7 +374,7 @@ function waveform(canvas, opts = {}) {
       const h = Math.max(1.5,
         (Math.sin(t + i * 0.55) * 0.5 + Math.sin(t * 1.7 + i * 0.31) * 0.5 + 1) / 2 * H * amp * env);
       const x = i * bw + bw * 0.22, w = Math.max(1.2, bw * 0.5);
-      ctx.fillStyle = LISTENING ? "#ff8fa4" : color;
+      ctx.fillStyle = LISTENING ? colLive : colIdle;
       ctx.globalAlpha = 0.35 + env * 0.6;
       ctx.fillRect(x, (H - h) / 2, w, h);
     }
@@ -375,14 +549,14 @@ function drawMemGraph(n) {
     const r = (0.18 + ((i * 37) % 100) / 100 * 0.32) * Math.min(W, H);
     nodes.push([W / 2 + Math.cos(a) * r * 1.5, H / 2 + Math.sin(a) * r]);
   }
-  ctx.strokeStyle = "rgba(60,224,255,.22)"; ctx.lineWidth = 0.7;
+  ctx.strokeStyle = trgba(THEME.rgb.acc || [60, 224, 255], 0.22); ctx.lineWidth = 0.7;
   nodes.forEach((a, i) => nodes.slice(i + 1).forEach((b) => {
     if (Math.hypot(a[0] - b[0], a[1] - b[1]) < Math.min(W, H) * 0.34) {
       ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
     }
   }));
   nodes.forEach(([x, y], i) => {
-    ctx.fillStyle = i % 4 === 0 ? "#a06bff" : "#3ce0ff";
+    ctx.fillStyle = i % 4 === 0 ? THEME.values.violet || "#a06bff" : THEME.values.accent || "#3ce0ff";
     ctx.shadowBlur = 8; ctx.shadowColor = ctx.fillStyle;
     ctx.beginPath(); ctx.arc(x, y, i % 4 === 0 ? 3 : 2, 0, 6.283); ctx.fill();
   });
@@ -591,7 +765,9 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
 
 /* ─────────────────────────── boot ─────────────────────────── */
 (async function boot() {
+  initTheme();   // before any canvas work so drawings pick up themed colours
   buildNav();
+  buildStudio();
   initGlobe();
   waveform($("#voice-wave"), { bars: 30, idle: 0.22 });
   waveform($("#talk-wave-l"), { bars: 16, idle: 0.3 });
@@ -611,6 +787,20 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
   $("#brief-btn").onclick = () => sendMessage("executive briefing", true);
   $("#btn-reset").onclick = async () => { await post("/api/reset"); $("#log").innerHTML = ""; bubble("bot", "Context cleared."); };
   $("#btn-clear-convos").onclick = async () => { await fetch("/api/conversations", { method: "DELETE" }); loadConversations(); };
+  $("#theme-reset").onclick = () => { THEME.values = { ...THEME_DEFAULTS }; applyTheme(); buildStudio(); toast("Theme reset to the Jarvis default."); };
+  $("#theme-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(JSON.stringify(THEME.values, null, 2)); toast("Theme copied to the clipboard."); }
+    catch { toast("Clipboard was blocked by the system.", "warn"); }
+  };
+  $("#theme-paste").onclick = () => {
+    const raw = window.prompt("Paste a theme JSON blob from 'Copy theme':");
+    if (!raw) return;
+    try {
+      const obj = JSON.parse(raw);
+      THEME.values = { ...THEME_DEFAULTS, ...obj };
+      applyTheme(); buildStudio(); toast("Theme imported.");
+    } catch { toast("That doesn't look like a theme blob.", "err"); }
+  };
   $("#skill-filter").oninput = (e) => renderSkills(e.target.value);
   $$("[data-goto]").forEach((b) => (b.onclick = () => go(b.dataset.goto)));
 
@@ -639,8 +829,16 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
     $("#mem-text").value = ""; loadMemory();
   };
   $("#provider").onchange = async (e) => {
-    const s = await post(`/api/provider/${e.target.value}`);
-    toast(`Brain switched to ${s.provider} (${s.model}).` + (s.notes?.length ? "\n" + s.notes.join("\n") : ""));
+    const wanted = e.target.value;
+    const s = await post(`/api/provider/${wanted}`);
+    const fellBack = wanted !== "auto" && s.provider !== wanted;
+    toast(
+      (fellBack
+        ? `Couldn't use ${wanted} — fell back to ${s.provider} (${s.model}).`
+        : `Brain switched to ${s.provider} (${s.model}).`) +
+        (s.notes?.length ? "\n" + s.notes.join("\n") : ""),
+      fellBack || s.notes?.length ? "warn" : "",
+    );
     loadStatus(); loadLLMs(); loadAgents();
   };
   $("#search").oninput = (e) => {

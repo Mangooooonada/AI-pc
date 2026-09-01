@@ -107,6 +107,22 @@ Three interchangeable brains, switchable live from the dropdown in **AI Core**.
    `ollama pull qwen2.5:7b` — noticeably better at using tools.*
 3. Restart Jarvis. It auto-detects it.
 
+### Interface Studio — make it yours
+
+Open **Interface Studio** in the sidebar to restyle the command center live:
+
+- **Colours** — accent (primary / deep / dim), background glows, panel tint, all text
+  tones, and every status colour (success / warning / danger / violet / amber)
+- **Finish** — panel opacity, glow intensity (everything glow scales together),
+  corner roundness, interface text size
+- **Layout** — sidebar width, top bar height, bottom bar height
+- **Effects** — scanlines on/off + strength, vignette, animations on/off
+- **Presets** — Jarvis Classic, Iron Legion, Matrix Ops, Ultraviolet, Solar Dusk
+- **Copy theme / Paste theme** — export your setup as JSON and move it between PCs
+
+Changes apply instantly and are saved in the app (`localStorage`), so they survive
+restarts.
+
 ### Option B — OpenAI (smartest, costs a few cents)
 
 **How to get an API key:**
