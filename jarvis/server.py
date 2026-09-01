@@ -217,6 +217,10 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
         {"key": "OLLAMA_NUM_CTX", "attr": "ollama_num_ctx", "label": "Ollama context size", "kind": "number", "min": 2048, "max": 131072, "step": 1024},
         {"key": "OLLAMA_KEEP_ALIVE", "attr": "ollama_keep_alive", "label": "Keep model loaded", "kind": "text", "placeholder": "30m  (-1 = forever)"},
         {"key": "JARVIS_TOOL_PACK", "attr": "tool_pack", "label": "Skills offered per message", "kind": "number", "min": 6, "max": 60, "step": 1},
+        {"key": "JARVIS_PROVIDER", "attr": "provider", "label": "Brain provider (auto / ollama / openai / offline)", "kind": "text", "placeholder": "auto"},
+        {"key": "OPENAI_BASE_URL", "attr": "openai_base_url", "label": "Cloud brain URL (OpenAI-compatible)", "kind": "text", "placeholder": "https://api.groq.com/openai/v1"},
+        {"key": "OPENAI_MODEL", "attr": "openai_model", "label": "Cloud brain model", "kind": "text", "placeholder": "llama-3.3-70b-versatile"},
+        {"key": "OPENAI_API_KEY", "attr": "openai_api_key", "label": "Cloud brain API key", "kind": "text", "placeholder": "gsk_… or sk-…"},
     ]},
     {"section": "Resident Assistant", "blurb": "Always-on behaviours. Autostart, always-listen and spoken-reply toggles are in the App card above.", "fields": [
         {"key": "JARVIS_TRAY", "attr": "tray", "label": "Close button tucks Jarvis into the system tray", "kind": "bool"},
@@ -474,18 +478,20 @@ def update_settings(body: SettingsIn) -> Dict[str, Any]:
             return {"ok": False, "error": f"bad value for {key}"}
         if f["key"] == "JARVIS_PRIVACY" and str(value).lower() not in {"strict", "guarded", "relaxed"}:
             return {"ok": False, "error": "privacy mode must be strict, guarded or relaxed"}
+        if f["key"] == "JARVIS_PROVIDER" and str(value).lower() not in {"auto", "ollama", "openai", "offline"}:
+            return {"ok": False, "error": "provider must be auto, ollama, openai or offline"}
         setattr(config, f["attr"], value)
         applied[key] = str(value).lower() if isinstance(value, bool) else str(value)
 
     env_ok = update_env_file(applied)
 
     notes: List[str] = []
-    if any(k == "OLLAMA_MODEL" for k in applied):
+    if set(applied) & {"OLLAMA_MODEL", "JARVIS_PROVIDER",
+                       "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"}:
         try:
-            ag = get_agent()
-            if ag.provider_name == "ollama":
-                st = ag.reload_provider("ollama")
-                notes.append(f"brain reloaded on {st['model']}")
+            st = get_agent().reload_provider(None)
+            notes.append(f"brain re-initialized: {st['provider']} ({st['model']})")
+            notes.extend(n for n in st.get("notes", []) if n)
         except Exception:
             pass
     return {"ok": True, "applied": list(applied), "persisted": env_ok, "notes": notes}

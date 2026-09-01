@@ -95,6 +95,13 @@ with dual waveforms, and Executive Briefing.
 
 ## Giving Jarvis a real brain
 
+Fastest path: **Settings ⚙ → Brain presets** — one click for *Groq (free,
+fastest cloud)*, *OpenAI (paid, top tier)* or *Ollama (local, private)*. For
+the cloud brains you only need to paste a free/paid API key afterwards;
+everything else — URL, model, provider — is filled in and hot-reloaded.
+
+
+
 Three interchangeable brains, switchable live from the dropdown in **AI Core**.
 
 ### Option A — Ollama (free, private, no key, runs on your PC) ⭐ recommended
@@ -193,7 +200,7 @@ RAM you can also go further:
 - **Ollama server flags** (set as system environment variables, not in `.env`):
   `OLLAMA_FLASH_ATTENTION=true` speeds up long contexts on supported models.
 
-### Option B — OpenAI (smartest, costs a few cents)
+### Option B — OpenAI-compatible clouds (OpenAI, Groq, OpenRouter…)
 
 **How to get an API key:**
 

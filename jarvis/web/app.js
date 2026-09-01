@@ -257,6 +257,19 @@ async function loadSettings() {
     ${netQr}
   </div><p class="st-note" style="margin-top:8px">Closing the window hides Jarvis to the <b>system tray</b> (quit from its icon). <b>Ctrl+J</b> summons Jarvis from anywhere. Theme, colours, glow and layout live in the <b>Interface Studio</b> (top right button).</p></div>`);
 
+  // One-click brain presets: fill the Brain section's cloud fields for them.
+  const presets = [
+    ["⚡ Groq — free cloud brain (fast)", "free key at console.groq.com",
+     { JARVIS_PROVIDER: "openai", OPENAI_BASE_URL: "https://api.groq.com/openai/v1", OPENAI_MODEL: "llama-3.3-70b-versatile" }],
+    ["🧠 OpenAI — paid, top tier", "key at platform.openai.com",
+     { JARVIS_PROVIDER: "openai", OPENAI_BASE_URL: "https://api.openai.com/v1", OPENAI_MODEL: "gpt-4o-mini" }],
+    ["🏠 Ollama — local & 100% private", "uses your installed models",
+     { JARVIS_PROVIDER: "ollama" }],
+  ];
+  chunks.push(`<div class="st-group"><h3>BRAIN PRESETS</h3><div class="st-rows">
+    ${presets.map((p, i) => `<button type="button" class="st-copy st-preset" data-preset="${i}">${p[0]}<span class="st-preset-sub">${p[1]}</span></button>`).join("")}
+  </div><p class="st-note" style="margin-top:8px">One click rewires the Brain section below. For cloud brains, paste your key into <b>Cloud brain API key</b> after. The current brain shows in <b>AI Core</b>. Privacy guard is watching cloud traffic (Settings → Safety).</p></div>`);
+
   for (const sec of d.sections) {
     const rows = sec.fields.map((f) => {
       flat[f.key] = f;
@@ -314,6 +327,15 @@ async function loadSettings() {
     try { await navigator.clipboard.writeText(netState.url); toast("Link copied — open it on your phone."); }
     catch { toast(netState.url); }
   };
+
+  root.querySelectorAll(".st-preset").forEach((b) => (b.onclick = async () => {
+    const [name, , updates] = presets[+b.dataset.preset];
+    const r = await post("/api/settings", { updates });
+    if (r.ok) {
+      toast(`${name.replace(/^[^ ]+ /, "")} wired up.` + (r.notes?.length ? " " + r.notes.join(" ") : ""));
+      loadStatus(); loadSettings();
+    } else toast(r.error || "Preset failed", "err");
+  }));
 
   const save = async (key, value) => {
     const f = flat[key];
