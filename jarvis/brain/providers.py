@@ -15,6 +15,20 @@ from ..config import config
 
 log = logging.getLogger(__name__)
 
+# Smells like a heavy turn? (long or code/analysis-flavoured) — shared by the
+# Ollama dual-brain router and the cross-brain RouterProvider.
+HEAVY_PAT = re.compile(
+    r"(```|\bcode\b|\bdebug\b|\brefactor\b|\bessay\b|\banaly[sz]e\b|"
+    r"\bcompare\b|\bexplain\b|\bwrite (?:a|an|me|some)\b|\bdesign\b|"
+    r"\boptimi[sz]e\b|\bstory\b|\breport\b|\bplan\b|\bwalk me through\b)",
+    re.I,
+)
+
+
+def is_heavy_turn(text: str) -> bool:
+    t = (text or "").strip()
+    return len(t) > 240 or bool(HEAVY_PAT.search(t))
+
 
 class ProviderError(RuntimeError):
     pass
@@ -219,13 +233,6 @@ class OllamaProvider:
         "Tool use is unavailable right now. Answer the user's last message "
         "directly in plain prose — no JSON, no code blocks, no curly braces."
     )
-    # Turn smells like it needs the heavy brain? (dual-brain routing)
-    _HEAVY_PAT = re.compile(
-        r"(```|\bcode\b|\bdebug\b|\brefactor\b|\bessay\b|\banaly[sz]e\b|"
-        r"\bcompare\b|\bexplain\b|\bwrite (?:a|an|me|some)\b|\bdesign\b|"
-        r"\boptimi[sz]e\b|\bstory\b|\breport\b|\bplan\b|\bwalk me through\b)",
-        re.I,
-    )
 
     def _route_model(self, messages: List[Dict]) -> str:
         """Dual-brain: quick model for chatter, OLLAMA_MODEL_BIG for heavy turns."""
@@ -244,7 +251,7 @@ class OllamaProvider:
             ((m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"),
             "",
         )
-        if (len(last) > 240 or self._HEAVY_PAT.search(last)) and big != self.model:
+        if is_heavy_turn(last) and big != self.model:
             log.info("ollama: heavy turn routed to '%s'", big)
             return big
         return self.model
@@ -424,6 +431,56 @@ class OllamaProvider:
         return {"content": "".join(content_parts) or None, "tool_calls": tool_calls}
 
 
+class RouterProvider:
+    """Cross-brain routing: heavy turns → cloud brain, quick/private → local.
+
+    Both brains receive the SAME conversation history (the agent owns it, not
+    the provider), so Groq sees what Ollama heard and vice-versa. STRICT
+    privacy mode forces every turn to the local brain.
+    """
+
+    name = "router"
+
+    def __init__(self, fast, heavy) -> None:
+        self.fast = fast    # local, private (usually OllamaProvider)
+        self.heavy = heavy  # big cloud brain (usually OpenAIProvider/Groq)
+        self.model = f"{fast.model} ⇄ {heavy.model}"
+        self.note = f"router: quick/private → {fast.model} · heavy → {heavy.model}"
+        self.last_route = "starting"
+
+    def resolve(self, messages: List[Dict]):
+        """Which backend answers THIS turn."""
+        if (getattr(config, "privacy_mode", "") or "guarded").lower() == "strict":
+            self.last_route = "local (strict privacy)"
+            return self.fast
+        last = next(
+            ((m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+        if is_heavy_turn(last):
+            self.last_route = f"heavy → {self.heavy.model}"
+            return self.heavy
+        self.last_route = f"local → {self.fast.model}"
+        return self.fast
+
+    @property
+    def last_turn_label(self) -> str:
+        return f"router·{self.last_route}"
+
+    def chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        return self.resolve(messages).chat(messages, tools)
+
+    def chat_stream(self, messages, tools, on_token):
+        sub = self.resolve(messages)
+        stream_fn = getattr(sub, "chat_stream", None)
+        if callable(stream_fn):
+            return stream_fn(messages, tools, on_token)
+        out = sub.chat(messages, tools)
+        if out.get("content"):
+            on_token(out["content"])
+        return out
+
+
 class RemoteJarvisProvider:
     """Use another running Jarvis server as this Jarvis's brain, over HTTP.
 
@@ -581,7 +638,31 @@ def get_provider(force: Optional[str] = None):
     order = [choice] + [p for p in ("remote", "openai", "ollama", "offline") if p != choice]
     for candidate in order:
         try:
-            if candidate == "remote":
+            if candidate == "auto":
+                # Pair fast-local with heavy-cloud and route per turn. If only
+                # one backend exists, use it alone; if neither, keep falling.
+                fast = heavy = None
+                try:
+                    fast = OllamaProvider()
+                except ProviderError as exc:
+                    errors.append(f"ollama: {exc}")
+                try:
+                    heavy = OpenAIProvider()
+                except ProviderError as exc:
+                    errors.append(f"cloud: {exc}")
+                if fast and heavy:
+                    router = RouterProvider(fast, heavy)
+                    errors.append(router.note)
+                    for sub in (fast, heavy):
+                        if getattr(sub, "note", None):
+                            errors.append(sub.note)
+                    return router, errors
+                if fast or heavy:
+                    only = fast or heavy
+                    if getattr(only, "note", None):
+                        errors.append(only.note)
+                    return only, errors
+                continue
                 provider = RemoteJarvisProvider()
                 if getattr(provider, "note", None):
                     errors.append(provider.note)

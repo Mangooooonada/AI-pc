@@ -226,6 +226,7 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
     ]},
     {"section": "Resident Assistant", "blurb": "Always-on behaviours. Autostart, always-listen and spoken-reply toggles are in the App card above.", "fields": [
         {"key": "JARVIS_TRAY", "attr": "tray", "label": "Close button tucks Jarvis into the system tray", "kind": "bool"},
+        {"key": "JARVIS_AUTO_MEM", "attr": "auto_mem", "label": "Auto-remember important facts you mention", "kind": "bool"},
         {"key": "JARVIS_BRIEFING", "attr": "briefing", "label": "Morning briefing on first launch of the day", "kind": "bool"},
         {"key": "JARVIS_HOTKEY", "attr": "hotkey", "label": "Ctrl+J summons Jarvis from anywhere (Windows)", "kind": "bool"},
     ]},

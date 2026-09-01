@@ -82,6 +82,11 @@ class Agent:
 
         self.history.append({"role": "user", "content": text})
         self._trim()
+        try:
+            from .automem import maybe_autoremember
+            maybe_autoremember(text)
+        except Exception:
+            pass  # auto-memory must never break a conversation
 
         actions: List[Dict[str, Any]] = []
         tools, hidden_tools = pack_tools(text)
@@ -98,7 +103,9 @@ class Agent:
                 )
             messages = [{"role": "system", "content": prompt}] + self.history
             from ..privacy import guard as _privacy_guard
-            messages = _privacy_guard(self.provider, messages)
+            _resolved = (self.provider.resolve(messages)
+                         if hasattr(self.provider, "resolve") else self.provider)
+            messages = _privacy_guard(_resolved, messages)
             try:
                 stream_fn = getattr(self.provider, "chat_stream", None)
                 if on_token and callable(stream_fn):
@@ -136,7 +143,9 @@ class Agent:
                 reply = content or "Done."
                 self.history.append({"role": "assistant", "content": reply})
                 self._trim()
-                return Turn(reply=reply, actions=actions, provider=self.provider_name, error=error)
+                return Turn(reply=reply, actions=actions,
+                            provider=getattr(self.provider, "last_turn_label", None)
+                                or self.provider_name, error=error)
 
             # Record the assistant's tool-calling turn.
             self.history.append(
@@ -188,7 +197,9 @@ class Agent:
         # Ran out of tool rounds.
         summary = actions[-1]["result"] if actions else "I got stuck in a loop there."
         self.history.append({"role": "assistant", "content": summary})
-        return Turn(reply=summary, actions=actions, provider=self.provider_name, error=error)
+        return Turn(reply=summary, actions=actions,
+                    provider=getattr(self.provider, "last_turn_label", None)
+                        or self.provider_name, error=error)
 
     def _trim(self) -> None:
         limit = max(4, config.max_history)

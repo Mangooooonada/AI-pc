@@ -176,6 +176,21 @@ restarts.
 Every external call is written to a replayable **audit ledger** (`GET /api/audit`,
 capped at 500 entries) recording provider, model, redaction count and strict-blocks.
 
+### Brain auto-routing + a memory that sticks
+
+- **Auto / router mode** (the default when both exist): quick and private turns
+  go to the fast local Ollama model; long or code/analysis-flavoured turns go
+  to the heavy cloud brain (OpenAI/Groq preset). Both brains read the SAME
+  conversation history, so context follows you across brains. STRICT privacy
+  mode pins every turn local, no matter how heavy it looks.
+- **Longer short-term memory**: default history depth is now 40 turns (was 20;
+  raise it further in Settings → Brain).
+- **Auto-memory** (JARVIS_AUTO_MEM): Jarvis quietly saves the facts worth
+  keeping — your name, favourites, where you live/work, email, birthday —
+  into long-term memory. They feed every brain's system prompt AND the
+  offline engine, and exact/near duplicates collapse. Toggle it in
+  Settings → Resident Assistant.
+
 ### Dual brains + smart skill packing
 
 - **Dual-brain routing** — set `OLLAMA_MODEL_BIG` (Settings → Brain, e.g. `qwen3:32b`) and long/code/analysis questions are routed to the heavy model automatically; quick chatter stays on the fast daily driver. Missing model? Jarvis warns once and stays put.

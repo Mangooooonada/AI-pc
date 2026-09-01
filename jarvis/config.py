@@ -139,7 +139,7 @@ class Config:
     # malformed tool calls out of small models + more context for chat.
     tool_pack: int = _int("JARVIS_TOOL_PACK", 16)
     temperature: float = _float("JARVIS_TEMPERATURE", 0.4)
-    max_history: int = _int("JARVIS_MAX_HISTORY", 20)
+    max_history: int = _int("JARVIS_MAX_HISTORY", 40)  # longer short-term thread
 
     # --- server -------------------------------------------------------------
     host: str = os.getenv("JARVIS_HOST", "0.0.0.0")
@@ -158,6 +158,7 @@ class Config:
     allow_shell: bool = _bool("JARVIS_ALLOW_SHELL", False)
     # Resident-assistant behaviours.
     briefing: bool = _bool("JARVIS_BRIEFING", True)   # morning briefing on first launch of the day
+    auto_mem: bool = _bool("JARVIS_AUTO_MEM", True)     # quietly save important personal facts   # morning briefing on first launch of the day
     tray: bool = _bool("JARVIS_TRAY", True)           # close → system tray instead of quitting
     hotkey: bool = _bool("JARVIS_HOTKEY", True)       # Ctrl+J summons the window (Windows)
     # Share the UI on the local network (phone control). Enabling binds the
