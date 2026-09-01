@@ -174,6 +174,12 @@ class Config:
             os.getenv("JARVIS_WORKSPACE", str(Path.home() / "JarvisFiles"))
         )
     )
+    # Ask-my-documents: folder scanned by the ask_documents skill.
+    docs_dir: Path = field(
+        default_factory=lambda: Path(
+            os.getenv("JARVIS_DOCS_DIR", str(Path(os.getenv("JARVIS_WORKSPACE", str(Path.home() / "JarvisFiles"))) / "docs"))
+        )
+    )
 
     @property
     def is_windows(self) -> bool:
@@ -222,3 +228,4 @@ class Config:
 
 config = Config()
 config.workspace.mkdir(parents=True, exist_ok=True)
+config.docs_dir.mkdir(parents=True, exist_ok=True)
