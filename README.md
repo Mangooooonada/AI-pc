@@ -338,8 +338,8 @@ jarvis/
 | **Stuck on the JARVIS boot splash** | The backend didn't answer in time. Check `jarvis-launcher.log` — the boot is instrumented (`GUI ready after…` / `Backend ready after…`). If the splash itself ever misbehaves, set env `JARVIS_NO_SPLASH=1` to bypass it |
 | Window won't open at all | Jarvis falls back to your browser (with an explanation pop-up); `pip install pywebview pythonnet` to fix |
 | Brain says `offline` unexpectedly | No key and no Ollama running. Start Ollama or check `.env` (a one-off Ollama error no longer sticks — the next message retries it automatically). Look at the **AI Core notes** for the exact reason |
-| Ollama is running but Jarvis stays `offline` | The configured model likely isn't pulled. Jarvis now tells you in AI Core notes exactly what to run, e.g. `ollama pull llama3.2`, or that your `.env` `OLLAMA_MODEL` doesn't match an installed model |
-| `Model 'x' isn't installed` | `ollama pull llama3.2` |
+| Ollama is running but Jarvis stays `offline` | Jarvis now self-heals: if the configured model isn't pulled, it automatically uses the best model you *do* have and tells you in the AI Core notes (e.g. "'llama3.2' isn't pulled; using 'qwen2.5:7b'"). Pin your choice with `OLLAMA_MODEL=` in `.env` |
+| `Model 'x' isn't installed` | `ollama pull llama3.2` — or just let Jarvis auto-pick an installed one |
 | Volume control imprecise | `pip install pycaw comtypes` |
 | Mic does nothing | Allow microphone access when prompted; WebView2 must be up to date |
 | `pyaudio` won't install | `pip install pipwin && pipwin install pyaudio` |

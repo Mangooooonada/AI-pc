@@ -7,6 +7,7 @@ Each provider exposes chat(messages, tools) -> dict with keys:
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from ..config import config
@@ -142,23 +143,56 @@ class OllamaProvider:
 
     name = "ollama"
 
+    # Daily-driver preference when auto-picking: small modern models first
+    # (fast on CPU), bigger brains deliberately last so nobody auto-lands on a
+    # 19 GB model that streams two tokens a second.
+    _PREFERRED = [
+        "qwen3:8b", "qwen2.5:7b", "llama3.1:8b", "llama3.2:3b", "llama3.2",
+        "qwen3:14b", "qwen2.5", "mistral-nemo", "gemma4", "gemma3",
+        "qwen3:30b", "qwen3:32b", "qwen3", "llama3", "phi4", "mistral", "deepseek",
+    ]
+
     def __init__(self) -> None:
         self.host = config.ollama_host.rstrip("/")
-        self.model = config.ollama_model
+        configured = (config.ollama_model or "").strip()
+        self.model = configured
+        self.note: Optional[str] = None
         if not config.ollama_available():
             raise ProviderError(
                 f"Ollama isn't reachable at {self.host}. Start it with 'ollama serve'."
             )
-        # The server being up isn't enough — if the configured model was
-        # never pulled, every chat call 404s and Jarvis "falls back to
-        # offline". Check it now so the user gets the exact fix.
         installed = config.ollama_models()
-        if installed and not self._model_installed(installed):
-            names = ", ".join(installed)
-            raise ProviderError(
-                f"Model '{self.model}' isn't installed. Run: ollama pull {self.model}  "
-                f"(installed: {names} — or set OLLAMA_MODEL={installed[0]} in .env)"
+        if not installed:
+            return  # can't list models — assume the configured one will work
+        if configured and self._model_installed(installed):
+            return
+        # The configured model isn't pulled. Rather than failing with an
+        # error the user must act on, self-heal: use the best model that IS
+        # installed and say so loudly.
+        pick = self._best_installed(installed)
+        big = [m for m in installed if m != pick and re.search(r":(\d{2,})b", m)
+               and int(re.search(r":(\d+)b", m).group(1)) >= 14]
+        hint = (
+            f" Bigger brain available: {big[0]} — set OLLAMA_MODEL={big[0]} in .env "
+            "for max smarts (slower per reply)."
+        ) if big else ""
+        if configured:
+            self.note = (
+                f"ollama: '{configured}' isn't pulled; using '{pick}' automatically."
+                + hint
             )
+        else:
+            self.note = f"ollama: auto-picked '{pick}'." + hint
+        self.model = pick
+
+    def _best_installed(self, installed: List[str]) -> str:
+        def score(m: str) -> int:
+            for i, pref in enumerate(self._PREFERRED):
+                if m == pref or m.startswith(pref):
+                    return i
+            return len(self._PREFERRED)
+
+        return min(installed, key=score)
 
     def _model_installed(self, installed: List[str]) -> bool:
         want = self.model
@@ -347,7 +381,10 @@ def get_provider(force: Optional[str] = None):
             if candidate == "openai":
                 return OpenAIProvider(), errors
             if candidate == "ollama":
-                return OllamaProvider(), errors
+                provider = OllamaProvider()
+                if getattr(provider, "note", None):
+                    errors.append(provider.note)
+                return provider, errors
             if candidate == "offline":
                 return OfflineProvider(), errors
         except ProviderError as exc:
