@@ -191,6 +191,45 @@ capped at 500 entries) recording provider, model, redaction count and strict-blo
   offline engine, and exact/near duplicates collapse. Toggle it in
   Settings → Resident Assistant.
 
+### Routines — Jarvis acts on a schedule
+
+Say **"every morning brief me on my tasks"** or **"every day at 5pm review my
+downloads folder"** and Jarvis files it as a routine. Every slot, a watcher
+runs that prompt through the *full* agent loop — tools, brains, everything —
+and reports back as a toast + voice note ("🕐 Routine 'Morning brief': …").
+Schedules are plain English: `every day at 5pm`, `every 2 hours`,
+`every friday at 9am`, `in 30 minutes`. It fires **once per missed slot**
+after the PC sleeps (never a burst), and it politely waits its turn while
+you're mid-chat. Manage them in **Workflows → Routines** (run now, delete,
+see the last summary) or by voice: "list my routines".
+
+### Install Jarvis on your phone (PWA) + interrupt him mid-sentence
+
+The phone UI is now a real installable web app — open it on the phone and
+choose **Add to Home Screen** for a full-screen Jarvis with its own icon.
+And barge-in works both ways: while Jarvis is speaking, say the wake word
+and he stops talking and starts listening. No more waiting out a monologue.
+
+### Ask your documents (no cloud, no embeddings)
+
+Drop text-files-by-other-names (md, txt, json, code, logs, csv…) into
+`<workspace>/docs/` (or point `JARVIS_DOCS_DIR` anywhere) and ask
+**"what do my documents say about the wifi password"**. Jarvis keyword-scores
+paragraphs across every file — stale-cache-free, fully local — and quotes the
+relevant passage with its file name. "list my documents" shows what he can see.
+
+### Git + Docker + Google
+
+- **"git status" / "recent commits" / "show my changes"** read the workspace
+  repo (falls back to the install folder).
+- **"docker ps" / "docker logs for web" / "restart container api"** talk to the
+  Docker CLI with fuzzy container-name matching — all of it degrades to plain
+  English when git or Docker isn't installed.
+- **Google Calendar + Gmail are pre-wired**: create an OAuth **Desktop app**
+  client in Google Cloud Console, drop `credentials.json` next to JARVIS.bat,
+  and say "google status" → the first request opens a browser sign-in, then
+  stays connected. Read-only scopes only; both secrets files are gitignored.
+
 ### Dual brains + smart skill packing
 
 - **Dual-brain routing** — set `OLLAMA_MODEL_BIG` (Settings → Brain, e.g. `qwen3:32b`) and long/code/analysis questions are routed to the heavy model automatically; quick chatter stays on the fast daily driver. Missing model? Jarvis warns once and stays put.
@@ -257,13 +296,18 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 
 ---
 
-## What it can do — 55 skills
+## What it can do — 69 skills
 
 | Area | Say something like |
 |---|---|
 | **Apps** | "open spotify", "launch task manager", "close chrome", "switch to word", "what windows are open" |
 | **Volume & display** | "set volume to 30", "mute", "set brightness to 80" |
 | **Media** | "play music", "next track", "play Daft Punk on YouTube", "play lo-fi on Spotify" |
+| **Routines** | "every morning brief me on my tasks", "every day at 5pm review my downloads", "every 90 minutes stand up and stretch" |
+| **Git** | "git status", "recent commits", "what did I change in git" |
+| **Docker** | "docker ps", "docker logs for web", "restart container api" |
+| **Documents** | "what do my documents say about the wifi password", "search my documents for ramen", "list my documents" |
+| **Google** | "google status", "what's on my google calendar", "check my gmail" |
 | **System** | "system status", "list processes by memory", "empty the recycle bin" |
 | **Power** | "lock the computer", "sleep", "shut down in 60 seconds", "cancel shutdown" |
 | **Screen & eyes** | "take a screenshot", "what's on my screen?" *(needs a vision model: `ollama pull llava`)* |
@@ -324,6 +368,8 @@ Everything else lives in `.env` (copy from `.env.example`):
 | `JARVIS_ALLOW_POWER` | `true` | Permit shutdown / restart / sign-out |
 | `JARVIS_ALLOW_SHELL` | `false` | Permit arbitrary shell commands ⚠ |
 | `JARVIS_WORKSPACE` | `~/JarvisFiles` | Notes, screenshots and saved state |
+| `JARVIS_DOCS_DIR` | `<workspace>/docs` | Folder the "ask my documents" skill searches |
+| `JARVIS_GOOGLE_CREDENTIALS` | `credentials.json` (auto-found) | Google OAuth Desktop client JSON for Calendar/Gmail |
 
 ---
 
