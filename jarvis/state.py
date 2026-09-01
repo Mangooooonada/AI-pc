@@ -242,6 +242,18 @@ def list_conversations(limit: int = 100) -> List[Dict[str, Any]]:
     return list(reversed(convos))[:limit]
 
 
+def recent_turns(limit: int = 80) -> List[Dict[str, str]]:
+    """Chronological {user, reply} pairs — feeds brain-memory restoration."""
+    with _LOCK:
+        convos = list(_STATE["conversations"])
+    pairs = [
+        {"user": str(c.get("user") or ""), "reply": str(c.get("reply") or "")}
+        for c in convos
+        if (c.get("user") or "").strip() and (c.get("reply") or "").strip()
+    ]
+    return pairs[-limit:]
+
+
 def clear_conversations() -> None:
     with _LOCK:
         _STATE["conversations"] = []

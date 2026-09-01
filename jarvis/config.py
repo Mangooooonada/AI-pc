@@ -125,8 +125,9 @@ class Config:
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2")
     # Ollama ships models with a tiny 2k-4k context by default — far too small
     # for the system prompt + tool schemas + conversation, so the prompt would
-    # be silently truncated. 8192 is a good floor; raise it if you have RAM.
-    ollama_num_ctx: int = _int("OLLAMA_NUM_CTX", 8192)
+    # be silently truncated. 12288 comfortably holds ~40 turns + packed tools
+    # on any desktop 7-8B model; raise it if you have RAM to spare.
+    ollama_num_ctx: int = _int("OLLAMA_NUM_CTX", 12288)
     # Keep the model loaded in RAM/VRAM between chats (snappier replies).
     ollama_keep_alive: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
     # Optional on/off for thinking-type models (e.g. qwen3): leave unset to

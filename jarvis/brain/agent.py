@@ -31,6 +31,34 @@ class Agent:
         # Serializes conversations: desktop + phone + a scheduled routine all
         # hitting at once must queue, not interleave the history.
         self._busy = threading.Lock()
+        self._restore_history()
+
+    def _restore_history(self) -> None:
+        """Reload recent conversation turns so a restart doesn't blank memory.
+
+        The UI already re-renders the saved conversation log on launch — but
+        previously the BRAIN started empty, so "what did I just ask you?" after
+        a restart got a dumbfounded answer. Now the model sees the same last N
+        turns the user sees on screen."""
+        try:
+            from .. import state as _st
+            limit = max(10, int(config.max_history))
+            pairs = _st.recent_turns(limit)
+        except Exception:
+            return
+        msgs: List[Dict[str, Any]] = []
+        for p in pairs:
+            user, reply = p["user"].strip(), p["reply"].strip()
+            if not user or not reply:
+                continue
+            msgs.append({"role": "user", "content": user[:2000]})
+            # Briefing/tool-dump replies get a shorter cap — the gist is what
+            # matters for continuity, and giant entries would crowd the
+            # 7-8B context window.
+            msgs.append({"role": "assistant", "content": reply[:900]})
+        if msgs:
+            self.history = msgs[-max(4, int(config.max_history)):]
+            self._trim()
 
     # -- state -------------------------------------------------------------
     @property
@@ -150,6 +178,19 @@ class Agent:
                     result = stand_in.chat_stream(messages, tools, on_token)
                 else:
                     result = stand_in.chat(messages, tools)
+                if actions:
+                    # The primary brain already ran its tools before dying on
+                    # the recap. The stand-in re-matching the same intent would
+                    # DOUBLE-fire tools (two timers, two restarts…) — surface
+                    # the real results and stop.
+                    reply = "\n".join(
+                        a["result"] for a in actions if a.get("result")
+                    ).strip() or (result.get("content") or "Done.")
+                    reply = reply[:2000]
+                    self.history.append({"role": "assistant", "content": reply})
+                    self._trim()
+                    return Turn(reply=reply, actions=actions,
+                                provider="offline", error=error)
             except Exception as exc:  # network blips etc.
                 error = f"{type(exc).__name__}: {exc}"
                 return Turn(
@@ -164,6 +205,15 @@ class Agent:
 
             if not calls:
                 reply = content or "Done."
+                # Brain died on the post-tool recap (error set, actions exist):
+                # the stand-in/offline text is context-free junk — show the
+                # actual tool results instead of pretending nothing happened.
+                if error and actions and degraded:
+                    tool_text = "\n".join(
+                        a["result"] for a in actions if a.get("result")
+                    ).strip()
+                    if tool_text:
+                        reply = tool_text[:2000]
                 self.history.append({"role": "assistant", "content": reply})
                 self._trim()
                 return Turn(reply=reply, actions=actions,

@@ -156,7 +156,7 @@ restarts.
   `qwen3:32b` or `qwen3-coder-next`. Then set `OLLAMA_MODEL=` to match.
 - **Context size matters.** Ollama defaults models to a 2k–4k-token context, which
   silently chops Jarvis's prompt and tool list. Jarvis now sends `num_ctx` itself —
-  tune it with `OLLAMA_NUM_CTX` (default `8192`; raise to `16384`+ if you have the RAM).
+  tune it with `OLLAMA_NUM_CTX` (default `12288`; raise to `16384`+ if you have the RAM).
 - **Keep it loaded.** `OLLAMA_KEEP_ALIVE=30m` (default) keeps the model in memory
   between requests instead of reloading every chat.
 - **Deterministic tools.** Lower `JARVIS_TEMPERATURE` towards `0.2` for stricter,
@@ -185,6 +185,10 @@ capped at 500 entries) recording provider, model, redaction count and strict-blo
   mode pins every turn local, no matter how heavy it looks.
 - **Longer short-term memory**: default history depth is now 40 turns (was 20;
   raise it further in Settings → Brain).
+- **Memory survives restarts**: on launch, Jarvis reloads the last
+  `JARVIS_MAX_HISTORY` turns from the saved conversation log into the brain —
+  the model sees the same conversation you see on screen. Long briefing/tool
+  replies are recalled trimmed so they don't crowd an 8B context window.
 - **Auto-memory** (JARVIS_AUTO_MEM): Jarvis quietly saves the facts worth
   keeping — your name, favourites, where you live/work, email, birthday —
   into long-term memory. They feed every brain's system prompt AND the
