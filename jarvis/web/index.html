@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JARVIS</title>
+<link rel="stylesheet" href="/static/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='none' stroke='%2300e5ff' stroke-width='8'/></svg>" />
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="dot" id="live-dot"></span>
+    <h1>J.A.R.V.I.S.</h1>
+    <span class="sub" id="tagline">initialising…</span>
+  </div>
+  <div class="top-right">
+    <select id="provider" title="Which brain to use">
+      <option value="auto">brain: auto</option>
+      <option value="openai">OpenAI</option>
+      <option value="ollama">Ollama (local)</option>
+      <option value="offline">Offline</option>
+    </select>
+    <button id="btn-reset" class="ghost" title="Clear conversation">reset</button>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- LEFT: system telemetry -->
+  <aside class="panel telemetry">
+    <h2>Telemetry</h2>
+    <div class="gauge" data-key="cpu"><label>CPU</label><div class="bar"><i></i></div><span>–</span></div>
+    <div class="gauge" data-key="memory"><label>Memory</label><div class="bar"><i></i></div><span>–</span></div>
+    <div class="gauge" data-key="disk"><label>Disk</label><div class="bar"><i></i></div><span>–</span></div>
+    <div class="gauge" data-key="battery"><label>Battery</label><div class="bar"><i></i></div><span>–</span></div>
+
+    <h2 class="mt">Status</h2>
+    <ul class="kv" id="status-list"><li><span>booting…</span></li></ul>
+
+    <h2 class="mt">Quick actions</h2>
+    <div class="chips" id="quick-actions"></div>
+  </aside>
+
+  <!-- CENTER: reactor + conversation -->
+  <section class="panel center">
+    <div class="reactor" id="reactor">
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="ring r3"></div>
+      <div class="core"></div>
+      <div class="pulse"></div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <form class="composer" id="composer" autocomplete="off">
+      <button type="button" id="btn-mic" class="mic" title="Hold a conversation by voice">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-3.08A7 7 0 0 0 19 12Z"/></svg>
+      </button>
+      <input id="input" placeholder="Ask Jarvis anything, or give an order…" />
+      <button type="submit" class="send">Send</button>
+    </form>
+    <div class="hint" id="hint">Try: “what’s my system status”, “open notepad”, “set volume to 30”, “weather in Palm Springs”</div>
+  </section>
+
+  <!-- RIGHT: skills -->
+  <aside class="panel skills">
+    <h2>Skills <span id="skill-count" class="count"></span></h2>
+    <input id="skill-filter" placeholder="filter skills…" />
+    <ul id="skill-list"></ul>
+  </aside>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
