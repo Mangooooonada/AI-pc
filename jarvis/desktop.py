@@ -22,6 +22,7 @@ from __future__ import annotations
 import ctypes
 import inspect
 import logging
+import os
 import socket
 import sys
 import threading
@@ -234,7 +235,7 @@ place-items:center;background:#020610;color:#3ce0ff;font-family:'Segoe UI',sans-
 </circle>
 <circle cx="24" cy="24" r="5" fill="#3ce0ff"/></svg>
 <div style="font-size:20px;letter-spacing:.35em;margin-top:18px;color:#eafaff">JARVIS</div>
-<div style="font-size:10px;letter-spacing:.3em;color:#1c6b85;margin-top:8px">BOOTING SYSTEMS…</div>
+<div id="st" style="font-size:10px;letter-spacing:.3em;color:#1c6b85;margin-top:8px">BOOTING SYSTEMS…</div>
 <div style="font-size:10px;color:#3d6479;margin-top:26px;max-width:380px;line-height:1.7">
 If this screen stays up for more than a minute, the backend failed to start —
 check jarvis-launcher.log next to the app.<br><br>
@@ -278,18 +279,27 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
 
         uvicorn.run(app, host="127.0.0.1", port=port, log_level="error")
 
-    threading.Thread(target=_serve, daemon=True).start()
-
     _set_app_identity()
 
     # Paint the OS window IMMEDIATELY with a boot splash, then swap in the
     # real UI as soon as the backend answers — no more staring at nothing
     # (or a blank white pane) while imports and provider probes run.
+    # Escape hatch: JARVIS_NO_SPLASH=1 swaps the animated splash for a plain
+    # page in case the splash itself ever misbehaves on some WebView2 build.
+    if os.environ.get("JARVIS_NO_SPLASH"):
+        splash = (
+            "<!doctype html><body style='background:#020610;color:#3d6479;display:grid;"
+            "place-items:center;height:100vh;font-family:sans-serif;margin:0'>"
+            "<div id='st' style='letter-spacing:.3em;font-size:11px'>JARVIS BOOTING…</div></body>"
+        )
+    else:
+        splash = _splash_html()
+
     bridge = Bridge()
     window = webview.create_window(
         WINDOW_TITLE,
         url=None,
-        html=_splash_html(),
+        html=splash,
         width=1440,
         height=900,
         min_size=(1080, 680),
@@ -313,21 +323,38 @@ Open <b style="color:#3ce0ff">jarvis-launcher.log</b> (next to the app) for the 
 or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
 </div></body></html>"""
 
-    def _handoff() -> None:
-        waited = time.time()
-        # Load the real UI only after BOTH halves are ready:
-        # 1. the GUI loop (splash loaded) — load_url() before it exists is
-        #    dropped silently on some backends and the splash spins forever;
-        # 2. the backend answering HTTP.
-        loaded_evt = getattr(window.events, "loaded", None)
+    def _splash_status(text: str) -> None:
         try:
-            if loaded_evt is not None:
-                loaded_evt.wait(20)  # GUI loop is up; splash is on screen
+            window.evaluate_js(
+                "var el=document.getElementById('st');if(el){el.textContent=%r;el.style.color='#12a8cf';}"
+                % (text,)
+            )
         except Exception:
             pass
 
+    def _handoff() -> None:
+        t0 = time.time()
+        # Stage 1 — let the GUI loop come up and paint the splash. Only after
+        # that do we start the heavy backend imports: running FastAPI/uvicorn
+        # imports *during* WebView2 init starves the message pump and Windows
+        # flags the fresh window as "Not Responding" after ~5 seconds.
+        loaded_evt = getattr(window.events, "loaded", None)
+        try:
+            if loaded_evt is not None:
+                loaded_evt.wait(20)
+        except Exception:
+            pass
+        logger.info("GUI ready after %.1fs; starting backend", time.time() - t0)
+        _splash_status("BACKEND WARMING…")
+
+        # Stage 2 — now spin up the backend.
+        t1 = time.time()
+        threading.Thread(target=_serve, daemon=True).start()
+
+        # Stage 3 — when it answers, swap the splash for the real UI.
         if _wait_for_server(port, timeout=45.0):
-            logger.info("Backend ready after %.1fs; handing off to the UI", time.time() - waited)
+            logger.info("Backend ready after %.1fs; handing off to the UI", time.time() - t1)
+            _splash_status("LOADING INTERFACE…")
             try:
                 window.load_url(f"http://127.0.0.1:{port}")
                 return

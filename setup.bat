@@ -62,6 +62,12 @@ if not exist ".env" (
   echo   Created .env  ^(open it later to add an API key - optional^)
 )
 
+REM ── Pre-compile bytecode so every launch doesn't crawl under AV scans ──
+echo   Pre-compiling for faster startups ^(one-time^)...
+call .venv\Scripts\python.exe -m compileall -q jarvis >nul 2>nul
+call .venv\Scripts\python.exe -m compileall -q ".venv\Lib" >nul 2>nul
+echo   [OK] Bytecode cached.
+
 echo.
 echo   Setup complete.
 echo.
