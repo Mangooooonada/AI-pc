@@ -1,19 +1,28 @@
-# J.A.R.V.I.S. — an AI assistant for your PC
+# J.A.R.V.I.S. — AI Command Center for your PC
 
-A Jarvis-style assistant that actually **controls your Windows computer**: opens apps, sets
-volume and brightness, takes screenshots, reports system health, plays music, searches the web,
-sets timers, locks or shuts down the machine — by voice or by text.
+A Jarvis-style assistant that runs as a **native desktop app** and actually **controls your
+Windows machine**: opens apps, sets volume and brightness, takes screenshots, reports system
+health, plays music, manages tasks and long-term memory, searches the web — by voice or text.
 
-It ships with a holographic HUD dashboard, a terminal chat, and a hands-free wake-word mode.
+It is not a website. It opens in its own OS window, with its own taskbar entry and icon.
 
 ```
-┌──────────────┬──────────────────────────────┬──────────────┐
-│  TELEMETRY   │        ARC REACTOR           │   SKILLS     │
-│  CPU  ▓▓▓░░  │        ( ◉ )                 │  open_app    │
-│  RAM  ▓▓▓▓░  │                              │  set_volume  │
-│  DISK ▓▓░░░  │   you › open spotify         │  screenshot  │
-│  BATT ▓▓▓▓▓  │   jarvis › Opening Spotify.  │  …34 total   │
-└──────────────┴──────────────────────────────┴──────────────┘
+┌────────────┬──────────────────────────────────────────────────────┐
+│  JARVIS    │  SYSTEM STATUS ● OPTIMAL      11:18:21      🔍 ⌘ 🔔 👤 │
+│  COMMAND   ├──────────────┬───────────────────────┬───────────────┤
+│  CENTER    │ AI CORE      │                       │ LIVE          │
+│            │ OVERVIEW     │      ◉  JARVIS        │ INTELLIGENCE  │
+│ ▸ Command  │  ● Core      │       AI CORE         │ FEED          │
+│ ▸ AI Core  │  ● Memory    │      (rotating        │  ⚠ 2 overdue  │
+│ ▸ Agents   │  ● Voice     │       neural globe)   │  ⓘ Standup    │
+│ ▸ Tasks  3 │  ● Agents    │                       │  ✦ CPU 15%    │
+│ ▸ Calendar ├──────────────┴─────────┬─────────────┴───────────────┤
+│ ▸ Memory   │  ACTIVE AGENTS         │ TIMELINE    │ QUICK COMMANDS│
+│ ▸ Convos   ├────────────┬───────────┴─────────────┴───────────────┤
+│ ▸ Tools 42 │ SYS MONITOR│ MEMORY INSIGHTS │  LLM STATUS           │
+│  ◉ VOICE   │  ◔ ◔ ◔     │  ⋰⋱ 3,380       │  ● Ollama  ○ OpenAI   │
+└────────────┴────────────┴─────────────────┴───────────────────────┘
+  📍 Location   ☀ Weather   📶 Network    〰 TALK TO JARVIS 〰    ▶ Briefing
 ```
 
 ---
@@ -23,85 +32,115 @@ It ships with a holographic HUD dashboard, a terminal chat, and a hands-free wak
 1. Install **Python 3.10+** from [python.org](https://www.python.org/downloads/) — during install,
    tick **"Add Python to PATH"**.
 2. Download this repo (green **Code** button → **Download ZIP** → extract).
-3. Double-click **`setup.bat`** — installs everything into a local virtual environment.
-4. Double-click **`start-jarvis.bat`** — the HUD opens in your browser.
+3. Double-click **`setup.bat`** — builds a local environment and installs everything.
+4. Double-click **`JARVIS.bat`** — the app window opens.
 
-That's it. Jarvis works immediately with **no API key** (offline command mode). Read on to make
-it genuinely conversational.
+Works immediately with **no API key**. See *Giving Jarvis a real brain* below to make it
+conversational.
 
-### Other ways to run it
+### Make it a proper installed app
+
+Double-click **`build-exe.bat`**. It produces `dist\JARVIS\JARVIS.exe` — a standalone app that
+runs **without Python installed**. Copy that folder anywhere, then right-click `JARVIS.exe` →
+*Send to* → *Desktop (create shortcut)*, or *Pin to Taskbar*.
+
+Want it to start with Windows? Press `Win+R`, type `shell:startup`, and drop a shortcut in.
+
+### Every way to run it
 
 | Command | What it does |
 |---|---|
-| `python main.py` | HUD dashboard at `http://localhost:8600` |
+| `python main.py` | **Desktop app window** (default) |
+| `python main.py web` | Serve the command center in a browser instead |
 | `python main.py cli` | Terminal chat |
 | `python main.py cli --speak` | Terminal chat that talks back |
 | `python main.py voice` | Hands-free: say **"Jarvis, …"** |
-| `python main.py say "set volume to 20"` | One-shot command |
+| `python main.py say "lock the computer"` | One-shot command |
+| `python main.py --fullscreen` | Borderless full-screen app |
+| `python main.py --dev` | App window with the web inspector |
+
+---
+
+## The command center
+
+**Left rail** — navigation, live voice waveform with a tap-to-speak orb, and a Focus Mode button
+that pauses media, mutes audio and dims the display in one click.
+
+**Command Center view**
+- **AI Core Overview** — every subsystem's real state: brain, memory count, voice availability,
+  running agents, connected LLMs, loaded skills.
+- **Neural globe** — a live-rendered rotating node sphere with travelling data arcs.
+- **Live Intelligence Feed** — generated from actual conditions: overdue tasks, upcoming
+  schedule, CPU/memory spikes, low battery, full disk, setup tips. Each item is clickable.
+- **Active Agents** — six subsystems with real status (active / standby / offline) and animated
+  activity traces.
+- **Mission Timeline** — your real tasks that have due times, colour-coded overdue / now /
+  upcoming / done.
+- **Quick Commands** — one-click briefing, screenshot, system report, lock, voice chat.
+- **System Monitor** — three animated dials driven by live `psutil` telemetry.
+- **Memory Insights** — a constellation graph plus memories stored, session turns, tool calls.
+- **LLM Status** — which providers are genuinely reachable right now.
+
+**Other views** — AI Core (full chat + provider control), Agents, Tasks (add/complete/delete),
+Calendar, Memory, Conversations, Knowledge Base, Tools & Skills (all 42, grouped and filterable),
+Workflows.
+
+**Status bar** — your location, live weather, connectivity, a centre **TALK TO JARVIS** button
+with dual waveforms, and Executive Briefing.
+
+**Shortcuts** — `Space` starts voice input anywhere · `/` focuses search · `Esc` stops listening.
 
 ---
 
 ## Giving Jarvis a real brain
 
-Jarvis has three interchangeable brains. Pick one — you can switch live from the dropdown in the
-top-right of the HUD.
+Three interchangeable brains, switchable live from the dropdown in **AI Core**.
 
 ### Option A — Ollama (free, private, no key, runs on your PC) ⭐ recommended
 
-Since you don't have an API key, start here. Everything stays on your machine.
-
-1. Download and install **[ollama.com/download](https://ollama.com/download)**.
-2. Open Command Prompt and pull a model:
+1. Install **[ollama.com/download](https://ollama.com/download)**.
+2. Pull a model:
    ```
    ollama pull llama3.2
    ```
    *`llama3.2` (2 GB) runs on almost anything. With 16 GB+ RAM or a decent GPU, try
-   `ollama pull qwen2.5:7b` — noticeably smarter at using tools.*
-3. Ollama runs in the background automatically. Restart Jarvis — it auto-detects it.
-
-To pin the model, put this in your `.env`:
-```
-JARVIS_PROVIDER=ollama
-OLLAMA_MODEL=llama3.2
-```
+   `ollama pull qwen2.5:7b` — noticeably better at using tools.*
+3. Restart Jarvis. It auto-detects it.
 
 ### Option B — OpenAI (smartest, costs a few cents)
 
 **How to get an API key:**
 
-1. Go to **[platform.openai.com/signup](https://platform.openai.com/signup)** and create an account
-   (this is *separate* from a ChatGPT Plus subscription — Plus does **not** include API access).
-2. Add credit: **[platform.openai.com/settings/organization/billing](https://platform.openai.com/settings/organization/billing)**
-   → *Add payment details*. The $5 minimum lasts a very long time — `gpt-4o-mini` costs roughly
-   **$0.01 for ~50 Jarvis commands**.
-3. Go to **[platform.openai.com/api-keys](https://platform.openai.com/api-keys)** → *Create new
-   secret key* → copy it (it starts with `sk-` and is shown **only once**).
-4. In the Jarvis folder, copy `.env.example` to `.env`, open it in Notepad and set:
+1. Create an account at **[platform.openai.com/signup](https://platform.openai.com/signup)**.
+   This is *separate* from ChatGPT — a ChatGPT Plus subscription does **not** include API access.
+2. Add credit at **[platform.openai.com/settings/organization/billing](https://platform.openai.com/settings/organization/billing)**.
+   The $5 minimum lasts a long time — `gpt-4o-mini` is roughly **$0.01 per 50 commands**.
+3. Create a key at **[platform.openai.com/api-keys](https://platform.openai.com/api-keys)** and
+   copy it (shown **only once**).
+4. Copy `.env.example` to `.env`, open it in Notepad, set:
    ```
    OPENAI_API_KEY=sk-your-key-here
    OPENAI_MODEL=gpt-4o-mini
    ```
 5. Restart Jarvis.
 
-> Never commit `.env` or share your key — `.gitignore` already excludes it.
+> Never commit or share `.env` — `.gitignore` already excludes it.
 
-**Free alternatives that use the same setting:** [Groq](https://console.groq.com/keys) has a
-generous free tier and is very fast. Get a key there and set:
+**Free alternative:** [Groq](https://console.groq.com/keys) has a generous free tier and is fast:
 ```
 OPENAI_API_KEY=gsk_your_groq_key
 OPENAI_BASE_URL=https://api.groq.com/openai/v1
 OPENAI_MODEL=llama-3.3-70b-versatile
 ```
-The same trick works for OpenRouter, Together, DeepSeek, or a local LM Studio server.
+The same three settings work for OpenRouter, Together, DeepSeek and LM Studio.
 
 ### Option C — Offline (default, zero setup)
 
-No model at all. A keyword engine maps plain phrases straight onto skills. It won't chat, but
-every command below works. Say **"what can you do"** for the full list.
+A keyword engine maps plain phrases straight onto skills. No chat, but every command below works.
 
 ---
 
-## What it can do — 34 skills
+## What it can do — 42 skills
 
 | Area | Say something like |
 |---|---|
@@ -111,33 +150,37 @@ every command below works. Say **"what can you do"** for the full list.
 | **System** | "system status", "list processes by memory", "empty the recycle bin" |
 | **Power** | "lock the computer", "sleep", "shut down in 60 seconds", "cancel shutdown" |
 | **Screen** | "take a screenshot" |
-| **Files** | "what's in my downloads folder", "open my documents folder", "find files named invoice", "clean my downloads", "take a note: buy cables" |
+| **Files** | "what's in my downloads folder", "find files named invoice", "clean my downloads", "take a note: buy cables" |
+| **Tasks** | "add a task finish the report at 5pm", "what are my tasks", "mark report as done" |
+| **Memory** | "remember that I prefer dark mode", "what do you know about me" |
+| **Workflows** | "run workflow Focus Mode", "brief me" |
 | **Web** | "what's the weather", "what's the news", "who is Ada Lovelace", "google mechanical keyboards" |
-| **Productivity** | "what time is it", "set a timer for 10 minutes", "remind me to call mom at 17:30", "what is 15% of 240" |
-| **Fun** | "tell me a joke" |
+| **Utilities** | "what time is it", "set a timer for 10 minutes", "what is 15% of 240", "tell me a joke" |
+
+Tasks, memories, conversations and workflows persist in
+`C:\Users\you\JarvisFiles\jarvis-state.json`.
 
 ---
 
 ## Voice
 
-**In the HUD** — click the 🎤 button (Chrome or Edge). Speech recognition and the reply voice both
-run in the browser, so nothing extra to install.
+**In the app** — click the mic orb, the bottom **TALK TO JARVIS** bar, or press `Space`.
+Recognition and speech both run in the embedded WebView, so there's nothing extra to install.
 
-**Hands-free desktop mode** — `python main.py voice`, then just talk:
+**Hands-free desktop mode** — `python main.py voice`, then talk:
 
 > **"Jarvis, what's my system status?"**
 
-Say the wake word once and Jarvis stays armed for follow-ups. "Stop listening" ends the session.
-This mode needs a microphone package:
+Say the wake word once and Jarvis stays armed for follow-ups; "stop listening" ends it. Needs:
 
 ```
 pip install SpeechRecognition
 pip install pipwin && pipwin install pyaudio     # if plain 'pip install pyaudio' fails
 ```
 
-For fully offline transcription (no Google round-trip), also `pip install openai-whisper` — Jarvis
-uses it automatically when present. Speech output uses `pyttsx3`, which drives the voices already
-built into Windows. Change voice with `JARVIS_TTS_VOICE=zira` in `.env`.
+For fully offline transcription add `pip install openai-whisper` — used automatically when
+present. Speech output uses `pyttsx3` and the voices already built into Windows
+(`JARVIS_TTS_VOICE=zira` to change).
 
 ---
 
@@ -149,36 +192,36 @@ Everything lives in `.env` (copy from `.env.example`):
 |---|---|---|
 | `JARVIS_PROVIDER` | `auto` | `auto` / `openai` / `ollama` / `offline` |
 | `JARVIS_NAME` | `Jarvis` | What it calls itself |
-| `JARVIS_USER_TITLE` | `Sir` | What it calls you |
+| `JARVIS_USER_TITLE` | `Sir` | What it calls you (shown as your operator role) |
 | `JARVIS_WAKE_WORD` | `jarvis` | Wake word for voice mode |
-| `JARVIS_PORT` | `8600` | HUD port |
+| `JARVIS_PORT` | `8600` | Internal port the app talks to |
 | `JARVIS_ALLOW_POWER` | `true` | Permit shutdown / restart / sign-out |
 | `JARVIS_ALLOW_SHELL` | `false` | Permit arbitrary shell commands ⚠ |
-| `JARVIS_WORKSPACE` | `~/JarvisFiles` | Where notes and screenshots are saved |
+| `JARVIS_WORKSPACE` | `~/JarvisFiles` | Notes, screenshots and saved state |
 
 ---
 
 ## Safety
 
 - Destructive skills (shutdown, close app, empty Recycle Bin) are flagged, and the system prompt
-  requires the model to confirm with you first.
-- Free-form shell execution is **off by default**. Turn it on only if you trust your model.
+  requires confirmation first.
+- Free-form shell execution is **off by default**.
 - File reads are restricted to your home folder and the Jarvis workspace.
-- The HUD binds to your machine; don't expose port 8600 to the open internet.
+- The desktop app binds its backend to `127.0.0.1` only — nothing is exposed to your network.
 
 ---
 
 ## Adding your own skill
 
-Drop a function in any file under `jarvis/skills/` — the decorator does the rest. It instantly
-becomes both an LLM tool and an offline voice command.
+Drop a function in any file under `jarvis/skills/`. It instantly becomes both an LLM tool and an
+offline voice command, and appears in the Tools & Skills panel.
 
 ```python
 from . import skill
 
 @skill(
     "coffee_break",
-    "Start a coffee break: pause media, dim the screen and set a 10 minute timer.",
+    "Start a coffee break: pause media, dim the screen and set a timer.",
     {"type": "object", "properties": {
         "minutes": {"type": "integer", "description": "Break length"}}},
     triggers=["coffee break", "take a break for {minutes} minutes"],
@@ -193,18 +236,27 @@ def coffee_break(minutes: int = 10) -> str:
     return f"Enjoy your {minutes} minutes, Sir."
 ```
 
+Multi-step **workflows** are defined in `jarvis/state.py` and run from the Workflows panel.
+
 ---
 
 ## Project layout
 
 ```
-main.py                 entry point (ui / cli / voice / say)
+main.py                 entry point (app / web / cli / voice / say)
 setup.bat               one-click Windows install
-start-jarvis.bat        launch the HUD
-start-voice.bat         launch hands-free voice mode
+JARVIS.bat              launch the desktop app
+start-voice.bat         hands-free voice mode
+start-console.bat       terminal chat
+build-exe.bat           build a standalone JARVIS.exe
+jarvis.spec             PyInstaller build recipe
+assets/icon.ico|png     app icon
 jarvis/
   config.py             settings from .env
+  desktop.py            native app window (pywebview / WebView2)
   server.py             FastAPI backend + REST API
+  state.py              persistent tasks, memory, conversations, workflows
+  agents.py             subsystem status + live intelligence feed
   cli.py                terminal + wake-word interfaces
   brain/
     agent.py            conversation loop, tool execution
@@ -214,14 +266,13 @@ jarvis/
     __init__.py         @skill registry + offline intent matcher
     system.py           volume, brightness, power, screenshots, stats
     apps.py             launch / close / focus windows
-    media.py            playback control, YouTube, Spotify
+    media.py            playback, YouTube, Spotify
     files.py            browse, search, read, notes, cleanup
     web.py              search, weather, news, Wikipedia
     knowledge.py        time, timers, reminders, math, jokes
-  voice/
-    tts.py              offline speech output
-    stt.py              microphone input + wake word
-  web/                  the HUD (HTML/CSS/JS, no build step)
+    agenda.py           tasks, long-term memory, workflows, briefing
+  voice/                offline TTS + microphone STT
+  web/                  the command center UI (no build step)
 ```
 
 ## Troubleshooting
@@ -229,26 +280,41 @@ jarvis/
 | Problem | Fix |
 |---|---|
 | `python` not recognised | Reinstall Python with **Add to PATH** ticked |
-| Brain says `offline` unexpectedly | No key and no Ollama running. Run `ollama serve`, or check `.env` |
+| App window is blank/white | Install the **[WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)** (already present on Windows 11) |
+| Window won't open at all | Jarvis falls back to your browser automatically; `pip install pywebview pythonnet` to fix |
+| Brain says `offline` unexpectedly | No key and no Ollama running. Start Ollama or check `.env` |
 | `Model 'x' isn't installed` | `ollama pull llama3.2` |
-| Volume control imprecise | `pip install pycaw comtypes` for exact control |
-| Mic button does nothing | Use Chrome/Edge and allow microphone access |
+| Volume control imprecise | `pip install pycaw comtypes` |
+| Mic does nothing | Allow microphone access when prompted; WebView2 must be up to date |
 | `pyaudio` won't install | `pip install pipwin && pipwin install pyaudio` |
-| Brightness does nothing | Many desktop monitors don't expose software brightness |
+| Brightness does nothing | Most desktop monitors don't expose software brightness |
 | Port 8600 in use | Set `JARVIS_PORT=8700` in `.env` |
+| `build-exe.bat` fails | Run `setup.bat` first, then retry; check antivirus isn't quarantining PyInstaller |
 
 ## REST API
 
-The backend is plain HTTP if you want to wire in a Stream Deck, phone shortcut, or hotkey:
+The backend is plain HTTP if you want to wire in a Stream Deck, phone shortcut or hotkey:
 
 ```
-GET  /api/status              brain, model, skill count
-GET  /api/system              live CPU / memory / disk / battery
-GET  /api/skills              full skill catalogue
-POST /api/chat                {"message": "open notepad"}
-POST /api/skill               {"name": "set_volume", "arguments": {"percent": 20}}
-POST /api/speak               {"text": "Ready when you are"}
-POST /api/provider/{name}     switch brain at runtime
+GET    /api/status              brain, model, subsystem overview
+GET    /api/system              live CPU / memory / disk / battery / uptime
+GET    /api/agents              subsystem roster
+GET    /api/llms                provider connectivity
+GET    /api/feed                live intelligence items
+GET    /api/environment         location, weather, network
+GET    /api/skills              full skill catalogue
+POST   /api/chat                {"message": "open notepad"}
+POST   /api/skill               {"name": "set_volume", "arguments": {"percent": 20}}
+POST   /api/speak               {"text": "Ready when you are"}
+GET    /api/tasks               tasks + timeline
+POST   /api/tasks               {"title": "…", "due": "5pm"}
+POST   /api/tasks/{id}/toggle   complete / reopen
+GET    /api/memory              long-term memory
+POST   /api/memory              {"text": "…"}
+GET    /api/conversations       conversation log
+GET    /api/workflows           saved workflows
+POST   /api/workflows/{id}/run  execute one
+POST   /api/provider/{name}     switch brain at runtime
 ```
 
-Interactive docs at `http://localhost:8600/api/docs`.
+Interactive docs at `/api/docs` when running in `web` mode.

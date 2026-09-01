@@ -1,11 +1,11 @@
 @echo off
-REM Hands-free voice mode in a console window
+REM Terminal chat
 cd /d "%~dp0"
-title JARVIS - Voice
+title JARVIS - Console
 if not exist ".venv" (
   echo   Run setup.bat first.
   pause
   exit /b 1
 )
-.venv\Scripts\python.exe main.py voice
+.venv\Scripts\python.exe main.py cli
 pause

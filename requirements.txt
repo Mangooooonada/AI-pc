@@ -1,21 +1,26 @@
-# --- core (required) -------------------------------------------------------
+# ───────────────────────── core (required) ─────────────────────────
 fastapi>=0.110
 uvicorn[standard]>=0.27
 requests>=2.31
 python-dotenv>=1.0
 pydantic>=2.5
 
-# --- PC control (Windows) --------------------------------------------------
-psutil>=5.9              # CPU / memory / battery / processes
-pyautogui>=0.9.54        # media & virtual keys
-pillow>=10.0             # screenshots
-pycaw>=20230407 ; sys_platform == 'win32'    # precise volume control
+# ───────────── desktop app window (native, no browser) ─────────────
+pywebview>=4.4            # renders the command center in an OS window
+pythonnet>=3.0 ; sys_platform == 'win32'   # WebView2 backend on Windows
+
+# ───────────────────── PC control (Windows) ────────────────────────
+psutil>=5.9               # CPU / memory / battery / processes
+pyautogui>=0.9.54         # media & virtual keys
+pillow>=10.0              # screenshots, app icon
+pycaw>=20230407 ; sys_platform == 'win32'   # precise volume control
 comtypes>=1.2 ; sys_platform == 'win32'
 
-# --- voice (optional but recommended) --------------------------------------
-pyttsx3>=2.90            # offline text to speech
-SpeechRecognition>=3.10  # microphone input
-# pyaudio               # needed by SpeechRecognition; on Windows: pip install pipwin && pipwin install pyaudio
+# ─────────────── voice (optional but recommended) ──────────────────
+pyttsx3>=2.90             # offline text to speech
+SpeechRecognition>=3.10   # microphone input
+# pyaudio                 # needed by SpeechRecognition
+#                           Windows: pip install pipwin && pipwin install pyaudio
 
-# --- extras ----------------------------------------------------------------
-pywhatkit>=5.4           # optional: play the actual first YouTube result
+# ───────────────────────────── extras ──────────────────────────────
+pywhatkit>=5.4            # optional: play the real first YouTube result

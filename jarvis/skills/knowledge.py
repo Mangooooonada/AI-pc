@@ -74,7 +74,7 @@ def set_timer(minutes: float | str = 5, label: str = "") -> str:
         },
         "required": ["text"],
     },
-    triggers=["remind me to {text}", "remember that {text}"],
+    triggers=["remind me to {text}", "remind me about {text}"],
 )
 def add_reminder(text: str, at: str = "") -> str:
     entry = {"text": text, "at": at, "created": _dt.datetime.now()}

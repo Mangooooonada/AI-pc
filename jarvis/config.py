@@ -7,10 +7,15 @@ from __future__ import annotations
 
 import os
 import platform
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    # Packaged with PyInstaller: settings live next to JARVIS.exe.
+    ROOT = Path(sys.executable).resolve().parent
+else:
+    ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_dotenv() -> None:

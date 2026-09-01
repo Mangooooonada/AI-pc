@@ -9,3 +9,8 @@ build/
 dist/
 JarvisFiles/
 *.log
+
+# PyInstaller
+dist/
+build/
+*.manifest
