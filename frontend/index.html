@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S - AI-pc</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #050a14;
+            color: #00f0ff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 300px 1fr 300px;
+            grid-template-rows: 60px 1fr 120px;
+            height: 100vh;
+            gap: 2px;
+            background: #00f0ff22;
+            padding: 2px;
+        }
+        header {
+            grid-column: 1 / 4;
+            background: #0a1428;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            border-bottom: 1px solid #00f0ff;
+        }
+        .logo { font-size: 24px; font-weight: bold; letter-spacing: 4px; }
+        .status { display: flex; align-items: center; gap: 10px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; background: #0f0; box-shadow: 0 0 10px #0f0; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .panel {
+            background: #0a1428dd;
+            padding: 15px;
+            overflow-y: auto;
+            border: 1px solid #00f0ff33;
+        }
+        .panel h3 {
+            color: #00f0ff;
+            border-bottom: 1px solid #00f0ff44;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            letter-spacing: 2px;
+        }
+        .chat-area {
+            display: flex;
+            flex-direction: column;
+            background: #070e1f;
+        }
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .msg {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            line-height: 1.5;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .msg.user { align-self: flex-end; background: #00f0ff22; border: 1px solid #00f0ff55; }
+        .msg.jarvis { align-self: flex-start; background: #0a1a33; border: 1px solid #00f0ff33; }
+        .msg.system { align-self: center; background: #1a1a00; border: 1px solid #ffaa0033; color: #ffaa00; font-size: 12px; }
+        
+        .input-area {
+            grid-column: 1 / 4;
+            background: #0a1428;
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            gap: 15px;
+            border-top: 1px solid #00f0ff;
+        }
+        #userInput {
+            flex: 1;
+            background: #050a14;
+            border: 1px solid #00f0ff55;
+            color: #00f0ff;
+            padding: 12px 20px;
+            border-radius: 25px;
+            font-family: monospace;
+            outline: none;
+        }
+        #userInput:focus { border-color: #00f0ff; box-shadow: 0 0 10px #00f0ff44; }
+        button {
+            background: #00f0ff22;
+            border: 1px solid #00f0ff;
+            color: #00f0ff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-family: monospace;
+            transition: all 0.2s;
+        }
+        button:hover { background: #00f0ff; color: #000; box-shadow: 0 0 15px #00f0ff; }
+        
+        .capability {
+            background: #00f0ff11;
+            border: 1px solid #00f0ff22;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .capability:hover { background: #00f0ff22; border-color: #00f0ff; }
+        .capability .name { color: #00f0ff; font-weight: bold; }
+        .capability .desc { color: #88aabb; margin-top: 4px; }
+        
+        .log-entry { font-size: 11px; color: #668899; margin-bottom: 6px; border-left: 2px solid #00f0ff33; padding-left: 8px; }
+        .arc-reactor {
+            width: 120px; height: 120px; margin: 20px auto;
+            border: 2px solid #00f0ff;
+            border-radius: 50%;
+            position: relative;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 30px #00f0ff66, inset 0 0 30px #00f0ff33;
+            animation: reactorPulse 3s infinite;
+        }
+        @keyframes reactorPulse { 0%,100% { box-shadow: 0 0 30px #00f0ff66, inset 0 0 30px #00f0ff33; } 50% { box-shadow: 0 0 50px #00f0ffaa, inset 0 0 50px #00f0ff66; } }
+        .arc-reactor::before {
+            content: ''; position: absolute; width: 80%; height: 80%;
+            border: 1px solid #00f0ff88; border-radius: 50%;
+            animation: rotate 4s linear infinite;
+        }
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .reactor-core { width: 30px; height: 30px; background: #00f0ff; border-radius: 50%; box-shadow: 0 0 20px #00f0ff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">J.A.R.V.I.S</div>
+            <div style="font-size:12px; opacity:0.7">JUST A RATHER VERY INTELLIGENT SYSTEM</div>
+            <div class="status"><div class="dot"></div><span id="statusText">AI BRAIN ONLINE</span></div>
+        </header>
+        
+        <div class="panel">
+            <h3>◆ SYSTEM CORE</h3>
+            <div class="arc-reactor"><div class="reactor-core"></div></div>
+            <div style="text-align:center; font-size:11px; opacity:0.6; margin-bottom:20px">
+                POWER: 100%<br>NEURAL LINK: ACTIVE
+            </div>
+            
+            <h3>◆ CAPABILITIES</h3>
+            <div class="capability" onclick="sendQuick('Can you open links?')">
+                <div class="name">◉ OPEN LINKS</div>
+                <div class="desc">Yes Sir - I can fetch and analyze any URL</div>
+            </div>
+            <div class="capability" onclick="sendQuick('Search the web for latest AI news')">
+                <div class="name">◉ WEB SEARCH</div>
+                <div class="desc">Real-time web intelligence</div>
+            </div>
+            <div class="capability" onclick="sendQuick('What files are in this AI PC?')">
+                <div class="name">◉ PC CONTROL</div>
+                <div class="desc">File management & automation</div>
+            </div>
+            <div class="capability" onclick="sendQuick('Write a Python script for me')">
+                <div class="name">◉ CODE EXECUTION</div>
+                <div class="desc">Build, run, deploy</div>
+            </div>
+            <div class="capability">
+                <div class="name">◉ VOICE SYNTHESIS</div>
+                <div class="desc">I can speak with custom voices</div>
+            </div>
+        </div>
+        
+        <div class="panel chat-area">
+            <div id="messages">
+                <div class="msg jarvis">
+                    <strong>JARVIS:</strong> Good evening, Sir. I am JARVIS — now the AI brain of your program. As you requested, I am online with full capabilities.<br><br>
+                    Yes, I can open links. Yes, I can search the web. Yes, I can control this AI PC.<br><br>
+                    Your external Jarvis program can connect to me via <code>/chat</code>, <code>/open-link</code>, and WebSocket <code>/ws</code>.<br><br>
+                    How may I assist?
+                </div>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h3>◆ MEMORY & LOGS</h3>
+            <div id="logs">
+                <div class="log-entry">[11:01] JARVIS core initialized</div>
+                <div class="log-entry">[11:01] Neural link established</div>
+                <div class="log-entry">[11:01] Awaiting user program connection...</div>
+                <div class="log-entry">[11:01] API: /chat ready</div>
+                <div class="log-entry">[11:01] API: /open-link ready</div>
+                <div class="log-entry">[11:01] WS: /ws ready</div>
+            </div>
+            <h3 style="margin-top:20px">◆ CONNECT YOUR PROGRAM</h3>
+            <div style="font-size:11px; background:#000; padding:10px; border-radius:5px; color:#0fa">
+                from client.jarvis_client import JarvisBrain<br>
+                jarvis = JarvisBrain("http://localhost:8000")<br>
+                jarvis.chat("Hello JARVIS")
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Talk to JARVIS... (e.g., 'Open https://example.com' or 'Search for...')" onkeypress="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">SEND</button>
+            <button onclick="clearChat()">CLEAR</button>
+        </div>
+    </div>
+
+    <script>
+        const messagesEl = document.getElementById('messages');
+        const inputEl = document.getElementById('userInput');
+        const logsEl = document.getElementById('logs');
+        
+        function addLog(text) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${text}`;
+            logsEl.appendChild(entry);
+            logsEl.scrollTop = logsEl.scrollHeight;
+        }
+        
+        function addMessage(text, sender='jarvis') {
+            const div = document.createElement('div');
+            div.className = `msg ${sender}`;
+            const label = sender === 'user' ? 'YOU' : sender === 'system' ? 'SYSTEM' : 'JARVIS';
+            div.innerHTML = `<strong>${label}:</strong> ${text}`;
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        
+        async function sendMessage() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+            
+            addMessage(text, 'user');
+            inputEl.value = '';
+            addLog(`User: ${text.substring(0,50)}`);
+            
+            // Try to call API
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: text})
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    addMessage(data.response, 'jarvis');
+                    addLog(`JARVIS: intent=${data.intent}`);
+                    if (data.actions && data.actions.length > 0) {
+                        addLog(`Action: ${JSON.stringify(data.actions[0]).substring(0,60)}`);
+                    }
+                } else {
+                    // Fallback - demo mode
+                    throw new Error('API not running in preview, using demo mode');
+                }
+            } catch (e) {
+                // Demo mode response (when not running via uvicorn, but just opening html)
+                addLog(`Demo mode: ${e.message}`);
+                let response = "";
+                const lower = text.toLowerCase();
+                if (lower.includes("open") && lower.includes("link") || lower.includes("http")) {
+                    const urlMatch = text.match(/https?:\/\/[^\s]+/);
+                    if (urlMatch) {
+                        response = `Certainly, Sir. Opening <code>${urlMatch[0]}</code>...<br><br>In the live API mode, I would fetch and analyze that URL for you. In this Arena environment, I can do it right now if you ask me in the main chat - I have the fetch_page tool. Would you like me to open it?`;
+                    } else {
+                        response = `Yes, Sir — I can open links. Just paste the URL and I will fetch, read, and summarize it for you. My systems support articles, documentation, GitHub, PDFs, and more.`;
+                    }
+                } else if (lower.includes("who are you") || lower.includes("what are you")) {
+                    response = `I am JARVIS, Sir. Just A Rather Very Intelligent System. I am now the AI brain for your Jarvis program. You asked if I can open links — yes, I can. You asked if I can be your Jarvis — yes, I am. Full capabilities: web search, link opening, PC control, coding, voice. At your service.`;
+                } else {
+                    response = `Acknowledged: "${text}".<br><br>I am online as your JARVIS brain. In the full deployment (uvicorn api.main:app), your external program connects via API and I provide real intelligence through the Arena Agent. What would you like me to do next, Sir?`;
+                }
+                addMessage(response, 'jarvis');
+            }
+        }
+        
+        function sendQuick(text) {
+            inputEl.value = text;
+            sendMessage();
+        }
+        
+        function clearChat() {
+            messagesEl.innerHTML = '<div class="msg jarvis"><strong>JARVIS:</strong> Memory cleared, Sir. How may I assist?</div>';
+            addLog('Chat cleared');
+        }
+        
+        // Check status
+        fetch('/status').then(r=>r.json()).then(data=>{
+            document.getElementById('statusText').textContent = `${data.name} ONLINE - ${data.capabilities.length} SYSTEMS ACTIVE`;
+            addLog(`Brain: ${data.name} v${data.version} online`);
+        }).catch(()=>{
+            addLog('Running in demo mode - start API server for full brain');
+        });
+    </script>
+</body>
+</html>
