@@ -86,6 +86,28 @@ def _bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _int(name: str, default: int) -> int:
+    """Crash-proof int env: a dirty .env (e.g. '30.0' from a slider save)
+    must never brick the whole app at import time."""
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(float(raw))
+    except ValueError:
+        return default
+
+
+def _float(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @dataclass
 class Config:
     # --- assistant identity -------------------------------------------------
@@ -104,7 +126,7 @@ class Config:
     # Ollama ships models with a tiny 2k-4k context by default — far too small
     # for the system prompt + tool schemas + conversation, so the prompt would
     # be silently truncated. 8192 is a good floor; raise it if you have RAM.
-    ollama_num_ctx: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+    ollama_num_ctx: int = _int("OLLAMA_NUM_CTX", 8192)
     # Keep the model loaded in RAM/VRAM between chats (snappier replies).
     ollama_keep_alive: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
     # Optional on/off for thinking-type models (e.g. qwen3): leave unset to
@@ -115,17 +137,17 @@ class Config:
     ollama_vision_model: str = os.getenv("OLLAMA_VISION_MODEL", "")
     # How many tool schemas a turn is allowed to see. Smaller packs = fewer
     # malformed tool calls out of small models + more context for chat.
-    tool_pack: int = int(os.getenv("JARVIS_TOOL_PACK", "16"))
-    temperature: float = float(os.getenv("JARVIS_TEMPERATURE", "0.4"))
-    max_history: int = int(os.getenv("JARVIS_MAX_HISTORY", "20"))
+    tool_pack: int = _int("JARVIS_TOOL_PACK", 16)
+    temperature: float = _float("JARVIS_TEMPERATURE", 0.4)
+    max_history: int = _int("JARVIS_MAX_HISTORY", 20)
 
     # --- server -------------------------------------------------------------
     host: str = os.getenv("JARVIS_HOST", "0.0.0.0")
-    port: int = int(os.getenv("JARVIS_PORT", "8600"))
+    port: int = _int("JARVIS_PORT", 8600)
 
     # --- voice --------------------------------------------------------------
     voice_enabled: bool = _bool("JARVIS_VOICE", True)
-    tts_rate: int = int(os.getenv("JARVIS_TTS_RATE", "185"))
+    tts_rate: int = _int("JARVIS_TTS_RATE", 185)
     tts_voice_hint: str = os.getenv("JARVIS_TTS_VOICE", "david")
 
     # --- safety -------------------------------------------------------------

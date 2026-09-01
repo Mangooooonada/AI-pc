@@ -205,12 +205,12 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
     ]},
     {"section": "Voice", "blurb": "Spoken replies. The read-out-loud toggle lives here too.", "fields": [
         {"key": "JARVIS_VOICE", "attr": "voice_enabled", "label": "Voice replies enabled", "kind": "bool"},
-        {"key": "JARVIS_TTS_RATE", "attr": "tts_rate", "label": "Speech rate", "kind": "range", "min": 120, "max": 260, "step": 1, "unit": " wpm"},
+        {"key": "JARVIS_TTS_RATE", "attr": "tts_rate", "label": "Speech rate", "kind": "range", "min": 120, "max": 260, "step": 1, "unit": " wpm", "as_int": True},
         {"key": "JARVIS_TTS_VOICE", "attr": "tts_voice_hint", "label": "Voice match (e.g. david, zira)", "kind": "text"},
     ]},
     {"section": "Brain", "blurb": "Tuning for the local model. Applies immediately.", "fields": [
         {"key": "JARVIS_TEMPERATURE", "attr": "temperature", "label": "Creativity (temperature)", "kind": "range", "min": 0, "max": 1.5, "step": 0.05},
-        {"key": "JARVIS_MAX_HISTORY", "attr": "max_history", "label": "Conversation memory depth", "kind": "range", "min": 4, "max": 60, "step": 2},
+        {"key": "JARVIS_MAX_HISTORY", "attr": "max_history", "label": "Conversation memory depth", "kind": "range", "min": 4, "max": 60, "step": 2, "as_int": True},
         {"key": "OLLAMA_MODEL", "attr": "ollama_model", "label": "Ollama model", "kind": "text", "placeholder": "blank = auto-pick"},
         {"key": "OLLAMA_MODEL_BIG", "attr": "ollama_model_big", "label": "Heavy brain for hard questions", "kind": "text", "placeholder": "e.g. qwen3:32b (blank = off)"},
         {"key": "OLLAMA_VISION_MODEL", "attr": "ollama_vision_model", "label": "Vision model (screen eyes)", "kind": "text", "placeholder": "blank = auto-detect llava/qwen3-vl"},
@@ -472,6 +472,8 @@ def update_settings(body: SettingsIn) -> Dict[str, Any]:
             elif f["kind"] == "range":
                 value = float(raw)
                 value = max(f.get("min", value), min(f.get("max", value), value))
+                if f.get("as_int"):
+                    value = int(round(value))  # whole-number sliders stay whole in .env
             else:
                 value = str(raw).strip()
         except (TypeError, ValueError):
