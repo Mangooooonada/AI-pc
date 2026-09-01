@@ -256,6 +256,51 @@ def bump_boot() -> None:
     save()
 
 
+# ------------------------------------------------------------- flags -------
+def get_flag(key: str, default: str = "") -> str:
+    with _LOCK:
+        return _STATE.setdefault("flags", {}).get(key, default)
+
+
+def set_flag(key: str, value: str) -> None:
+    with _LOCK:
+        _STATE.setdefault("flags", {})[key] = value
+    save()
+
+
+# ------------------------------------------------------- notifications -----
+def add_notification(text: str, kind: str = "nudge") -> Dict[str, Any]:
+    """Queue something Jarvis wants to interrupt the user with (timers, due
+    reminders…). The UI drains these via /api/status and shows + speaks them."""
+    note = {"id": str(uuid.uuid4())[:8], "at": _now(), "text": text, "kind": kind}
+    with _LOCK:
+        notes = _STATE.setdefault("notifications", [])
+        notes.append(note)
+        del notes[:-50]
+    save()
+    return note
+
+
+def drain_notifications() -> List[Dict[str, Any]]:
+    """Return everything pending and clear it — single-consumer semantics."""
+    with _LOCK:
+        notes = list(_STATE.setdefault("notifications", []))
+        _STATE["notifications"] = []
+    if notes:
+        save()
+    return notes
+
+
+def mark_task_notified(task_id: str) -> bool:
+    with _LOCK:
+        for t in _STATE["tasks"]:
+            if t["id"] == task_id:
+                t["notified"] = True
+                save()
+                return True
+    return False
+
+
 # -------------------------------------------------------------- workflows --
 def list_workflows() -> List[Dict[str, Any]]:
     with _LOCK:

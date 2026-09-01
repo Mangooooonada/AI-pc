@@ -93,6 +93,9 @@ def status() -> Dict[str, Any]:
             "os": f"{platform.system()} {platform.release()}",
             "overview": agents_mod.core_overview(ag.provider_name, st["model"]),
             "stats": state.stats(),
+            # Proactive nudges (timers firing, reminders coming due) drain
+            # through here — the UI shows and speaks them.
+            "alerts": state.drain_notifications(),
         }
     )
     return st
@@ -196,6 +199,11 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
         {"key": "OLLAMA_KEEP_ALIVE", "attr": "ollama_keep_alive", "label": "Keep model loaded", "kind": "text", "placeholder": "30m  (-1 = forever)"},
         {"key": "JARVIS_TOOL_PACK", "attr": "tool_pack", "label": "Skills offered per message", "kind": "number", "min": 6, "max": 60, "step": 1},
     ]},
+    {"section": "Resident Assistant", "blurb": "Always-on behaviours. Autostart, always-listen and spoken-reply toggles are in the App card above.", "fields": [
+        {"key": "JARVIS_TRAY", "attr": "tray", "label": "Close button tucks Jarvis into the system tray", "kind": "bool"},
+        {"key": "JARVIS_BRIEFING", "attr": "briefing", "label": "Morning briefing on first launch of the day", "kind": "bool"},
+        {"key": "JARVIS_HOTKEY", "attr": "hotkey", "label": "Ctrl+J summons Jarvis from anywhere (Windows)", "kind": "bool"},
+    ]},
     {"section": "Safety", "blurb": "What Jarvis is allowed to do without asking twice.", "fields": [
         {"key": "JARVIS_ALLOW_POWER", "attr": "allow_power", "label": "Allow power commands (shutdown / restart / sleep)", "kind": "bool", "danger": True},
         {"key": "JARVIS_ALLOW_SHELL", "attr": "allow_shell", "label": "Allow raw shell commands — dangerous", "kind": "bool", "danger": True},
@@ -203,6 +211,141 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
 ]
 
 _FIELD_BY_KEY = {f["key"]: f for s in SETTINGS_FIELDS for f in s["fields"]}
+
+
+# ---------------------------------------------------- morning briefing ---
+def _build_briefing() -> Dict[str, str]:
+    """Compose the morning briefing from the executive_briefing skill plus a
+    one-breath spoken line. Every section is individually fault-tolerant."""
+    from . import state as _st
+
+    now = datetime.now()
+    daypart = "morning" if now.hour < 12 else ("afternoon" if now.hour < 18 else "evening")
+    spoken = f"Good {daypart}, {config.user_title}."
+    try:
+        text = run_skill("executive_briefing", {})
+    except Exception as exc:  # briefing must never block boot
+        text = f"(briefing degraded: {exc})"
+    try:
+        open_tasks = [t for t in _st.list_tasks() if not t["done"]]
+        overdue = _st.overdue_tasks()
+        if overdue:
+            spoken += f" {len(overdue)} reminder{'s are' if len(overdue) > 1 else ' is'} overdue."
+        elif open_tasks:
+            spoken += f" You have {len(open_tasks)} open task{'s' if len(open_tasks) > 1 else ''}."
+        else:
+            spoken += " Your plate is clean."
+    except Exception:
+        pass
+    return {"text": f"Good {daypart}, {config.user_title}.\n\n{text}", "spoken": spoken}
+
+
+@app.get("/api/briefing")
+def get_briefing(fresh: int = 0) -> Dict[str, Any]:
+    """First call of the day returns pending=true so the UI shows + speaks it.
+
+    ?fresh=1 forces a rebuild without consuming the daily flag (chat command).
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    due = datetime.now().hour >= 5  # don't brief at 3 a.m.
+    if fresh:
+        return {"pending": True, **_build_briefing()}
+    if not config.briefing or not due or state.get_flag("briefing_day") == today:
+        return {"pending": False}
+    state.set_flag("briefing_day", today)
+    return {"pending": True, **_build_briefing()}
+
+
+# ---------------------------------------------------------- autostart ------
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_AUTOSTART_NAME = "JarvisAI"
+
+
+def _autostart_cmd() -> str:
+    bat = Path(__file__).resolve().parent.parent / "JARVIS.bat"
+    return f'"{bat}" --minimized'
+
+
+def _autostart_enabled() -> Optional[bool]:
+    if platform.system() != "Windows":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as k:
+            winreg.QueryValueEx(k, _AUTOSTART_NAME)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
+@app.get("/api/autostart")
+def get_autostart() -> Dict[str, Any]:
+    enabled = _autostart_enabled()
+    return {
+        "supported": enabled is not None,
+        "enabled": bool(enabled),
+        "command": _autostart_cmd(),
+        "note": "" if enabled is not None else "Windows-only for now.",
+    }
+
+
+class AutostartIn(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/autostart")
+def set_autostart(body: AutostartIn) -> Dict[str, Any]:
+    if platform.system() != "Windows":
+        return {"ok": False, "error": "Autostart is Windows-only right now."}
+    import winreg
+
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as k:
+            if body.enabled:
+                winreg.SetValueEx(k, _AUTOSTART_NAME, 0, winreg.REG_SZ, _autostart_cmd())
+            else:
+                try:
+                    winreg.DeleteValue(k, _AUTOSTART_NAME)
+                except FileNotFoundError:
+                    pass
+        return {"ok": True, "enabled": body.enabled}
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+# ------------------------------------------------ proactive nudge loop ----
+_watcher_started = False
+
+
+def _nudge_watcher() -> None:
+    """Scan for due reminders/timers and enqueue UI notifications.
+
+    Tasks already past their 'due' time that were never announced get one
+    notification each; timers enqueue their own from the skill that fires
+    them. Runs forever as a daemon — silent on any error.
+    """
+    import time as _time
+
+    while True:
+        _time.sleep(20)
+        try:
+            now = datetime.now()
+            for t in state.list_tasks(include_done=False):
+                due = t.get("due")
+                if not due or t.get("notified"):
+                    continue
+                try:
+                    due_dt = datetime.fromisoformat(due)
+                except (TypeError, ValueError):
+                    continue
+                if due_dt <= now:
+                    state.add_notification(f"Reminder: {t['title']}")
+                    state.mark_task_notified(t["id"])
+        except Exception:
+            pass
 
 
 @app.get("/api/settings")
@@ -219,7 +362,7 @@ def get_settings() -> Dict[str, Any]:
 @app.post("/api/settings")
 def update_settings(body: SettingsIn) -> Dict[str, Any]:
     applied: Dict[str, Any] = {}
-    for key, raw in body.updates.items():
+    for key, raw in (body.updates or {}).items():
         f = _FIELD_BY_KEY.get(key)
         if not f:
             continue
@@ -514,5 +657,10 @@ else:  # pragma: no cover
 
 def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     import uvicorn
+
+    global _watcher_started
+    if not _watcher_started:
+        _watcher_started = True
+        threading.Thread(target=_nudge_watcher, daemon=True, name="nudge-watcher").start()
 
     uvicorn.run(app, host=host or config.host, port=port or config.port, log_level="warning")

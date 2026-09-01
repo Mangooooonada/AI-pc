@@ -51,6 +51,12 @@ def set_timer(minutes: float | str = 5, label: str = "") -> str:
         time.sleep(max(0.0, (fire_at - _dt.datetime.now()).total_seconds()))
         entry["done"] = True
         try:
+            from .. import state
+
+            state.add_notification(f"Timer done: {entry['label']}.")
+        except Exception:
+            pass
+        try:
             from ..voice.tts import speak
 
             speak(f"{config.user_title}, your {entry['label']} is up.")

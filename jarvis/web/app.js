@@ -216,10 +216,17 @@ async function loadSettings() {
 
   // App-side setting that only lives in the browser: read replies aloud.
   const speakOn = localStorage.getItem("jarvis.speak") !== "off";
+  const listenOn = localStorage.getItem("jarvis.listen") === "on";
+  let bootState = null;
+  try { bootState = await api("/api/autostart"); } catch {}
   chunks.push(`<div class="st-group"><h3>App</h3><div class="st-rows">
     <label class="st-ctl"><span>Read Jarvis's replies aloud (browser voice)</span>
       <button type="button" class="st-toggle ${speakOn ? "on" : ""}" id="set-speak"></button></label>
-  </div><p class="st-note" style="margin-top:8px">Theme, colours, glow and layout live in the <b>Interface Studio</b> (top right button).</p></div>`);
+    <label class="st-ctl"><span>Always listen for the wake word</span>
+      <button type="button" class="st-toggle ${listenOn ? "on" : ""}" id="set-listen"></button></label>${bootState && bootState.supported ? `
+    <label class="st-ctl"><span>Start with Windows (tucks into the tray)</span>
+      <button type="button" class="st-toggle ${bootState.enabled ? "on" : ""}" id="set-boot"></button></label>` : ""}
+  </div><p class="st-note" style="margin-top:8px">Closing the window hides Jarvis to the <b>system tray</b> (quit from its icon). <b>Ctrl+J</b> summons Jarvis from anywhere. Theme, colours, glow and layout live in the <b>Interface Studio</b> (top right button).</p></div>`);
 
   for (const sec of d.sections) {
     const rows = sec.fields.map((f) => {
@@ -247,6 +254,21 @@ async function loadSettings() {
     e.currentTarget.classList.toggle("on", SPEAK_BACK);
     if (!SPEAK_BACK) window.speechSynthesis?.cancel();
     toast(SPEAK_BACK ? "Spoken replies on." : "Spoken replies muted.");
+  };
+
+  $("#set-listen").onclick = (e) => {
+    const on = localStorage.getItem("jarvis.listen") !== "on";
+    localStorage.setItem("jarvis.listen", on ? "on" : "off");
+    e.currentTarget.classList.toggle("on", on);
+    if (on) startWakeLoop(); else { stopWakeLoop(); toast("Always-listen off."); }
+  };
+
+  const bootBtn = $("#set-boot");
+  if (bootBtn) bootBtn.onclick = async (e) => {
+    const on = !e.currentTarget.classList.contains("on");
+    const r = await post("/api/autostart", { enabled: on });
+    if (r.ok) { e.currentTarget.classList.toggle("on", on); toast(on ? "Jarvis will start with Windows, tucked into the tray." : "Autostart off."); }
+    else toast(r.error || "Couldn't change autostart", "err");
   };
 
   const save = async (key, value) => {
@@ -466,6 +488,10 @@ function tickClock() {
 /* ─────────────────────────── data loaders ─────────────────────────── */
 async function loadStatus() {
   STATUS = await api("/api/status");
+  (STATUS.alerts || []).forEach((a) => {
+    toast(`🔔 ${a.text}`, "good");
+    if (SPEAK_BACK) say(a.text);
+  });
   $("#core-version").textContent = "v" + STATUS.version;
   $("#op-role").textContent = STATUS.user_title || "Commander";
   const bad = STATUS.provider === "offline";
@@ -868,8 +894,12 @@ function initVoice() {
   }
   RECOGNIZER = new SR();
   RECOGNIZER.lang = "en-US"; RECOGNIZER.interimResults = true; RECOGNIZER.continuous = false;
-  RECOGNIZER.onstart = () => { LISTENING = true; setVoiceUI(true); };
-  RECOGNIZER.onend = () => { LISTENING = false; setVoiceUI(false); };
+  RECOGNIZER.onstart = () => { LISTENING = true; setVoiceUI(true); if (WAKE_LOOP) stopWakeLoopSoft(); };
+  RECOGNIZER.onend = () => {
+    LISTENING = false; setVoiceUI(false);
+    // hand the mic back to the always-listen loop when a command finishes
+    if (WAKE_WANT) setTimeout(() => { if (!LISTENING) { WAKE_LOOP = null; startWakeLoop(); } }, 700);
+  };
   RECOGNIZER.onerror = (e) => { LISTENING = false; setVoiceUI(false); if (e.error === "not-allowed") toast("Microphone access was blocked.", "warn"); };
   RECOGNIZER.onresult = (e) => {
     const res = e.results[e.results.length - 1];
@@ -878,6 +908,57 @@ function initVoice() {
     if (res.isFinal) sendMessage(text.replace(new RegExp(`^\\s*${STATUS.wake_word || "jarvis"}[,\\s]*`, "i"), ""), true);
   };
 }
+
+/* ───── always-listening wake loop + global summon hook ───── */
+let WAKE_LOOP = null, WAKE_WANT = false;
+
+function startWakeLoop() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return toast("Always-listen needs Edge or Chrome for speech recognition.", "warn");
+  if (WAKE_LOOP || LISTENING) return;
+  WAKE_WANT = true;
+  WAKE_LOOP = new SR();
+  WAKE_LOOP.lang = "en-US"; WAKE_LOOP.continuous = true; WAKE_LOOP.interimResults = true;
+  const wake = (STATUS.wake_word || "jarvis").toLowerCase();
+  WAKE_LOOP.onresult = (e) => {
+    const tail = Array.from(e.results).slice(-2).map((r) => r[0].transcript).join(" ").toLowerCase();
+    if (tail.includes(wake)) { WAKE_LOOP._hot = true; try { WAKE_LOOP.stop(); } catch {} }
+  };
+  WAKE_LOOP.onend = () => {
+    const hot = WAKE_LOOP && WAKE_LOOP._hot;
+    WAKE_LOOP = null;
+    if (hot) { toast(`Heard you — listening…`); toggleMic(); }
+    else if (WAKE_WANT && !LISTENING) setTimeout(() => { if (WAKE_WANT && !LISTENING) startWakeLoop(); }, 900);
+  };
+  WAKE_LOOP.onerror = (e) => {
+    if (e.error === "not-allowed") {
+      stopWakeLoop();
+      localStorage.setItem("jarvis.listen", "off");
+      toast("Microphone blocked — always-listen switched off.", "warn");
+    }
+  };
+  try { WAKE_LOOP.start(); } catch {}
+  toast(`Always-listen: say “${wake}” anytime.`, "good");
+}
+
+function stopWakeLoop() {
+  WAKE_WANT = false;
+  try { WAKE_LOOP?.abort(); } catch {}
+  WAKE_LOOP = null;
+}
+
+// Pause the wake loop without disabling the preference (mic handoff).
+function stopWakeLoopSoft() {
+  try { WAKE_LOOP?.abort(); } catch {}
+}
+
+// Summoned from the Windows Ctrl+J global hotkey (desktop.py).
+window.jarvisWake = () => {
+  try { go("command"); } catch {}
+  document.querySelector("#search")?.focus();
+  if (!LISTENING && RECOGNIZER) setTimeout(() => toggleMic(), 150);
+  toast("At your service.");
+};
 
 function setVoiceUI(on) {
   $("#mic-orb").classList.toggle("rec", on);
@@ -1015,4 +1096,13 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
     ? `Command center online, ${t}. I'm running the offline engine — direct commands only, no API key needed. Open the Knowledge Base for how to add a real model.`
     : `Command center online, ${t}. All systems nominal. What do you need?`);
   speechSynthesis?.getVoices();
+
+  // Morning briefing: first launch of the day gets the situational rundown.
+  try {
+    const brief = await api("/api/briefing");
+    if (brief?.pending) setTimeout(() => { bubble("bot", brief.text); if (SPEAK_BACK) say(brief.spoken); }, 900);
+  } catch {}
+
+  // Always-listening wake word, if the user armed it.
+  if (localStorage.getItem("jarvis.listen") === "on") setTimeout(startWakeLoop, 1500);
 })();

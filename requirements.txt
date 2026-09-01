@@ -22,5 +22,9 @@ SpeechRecognition>=3.10   # microphone input
 # pyaudio                 # needed by SpeechRecognition
 #                           Windows: pip install pipwin && pipwin install pyaudio
 
+# ─────────────────────── resident assistant (optional) ─────────────
+pystray>=0.19             # system-tray icon: close-to-tray instead of quit
+qrcode>=7.4               # QR code for pairing a phone on the local network
+
 # ───────────────────────────── extras ──────────────────────────────
 pywhatkit>=5.4            # optional: play the real first YouTube result

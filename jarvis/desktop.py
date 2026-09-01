@@ -317,7 +317,89 @@ def _ensure_ollama_running() -> None:
         logger.warning("couldn't auto-start ollama: %s", exc)
 
 
-def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False) -> int:
+def _tray_image():
+    """A tiny glowing Jarvis orb, drawn with PIL — no asset dependency."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((2, 2, 62, 62), radius=16, fill=(4, 12, 24, 255), outline=(60, 224, 255, 255), width=2)
+    d.ellipse((20, 20, 44, 44), fill=(60, 224, 255, 255))
+    d.ellipse((27, 27, 37, 37), fill=(4, 12, 24, 255))
+    return img
+
+
+def _start_tray(window, on_quit) -> bool:
+    """System-tray icon so closing the window hides instead of quitting.
+    Returns True when the tray actually came up (pystray is optional)."""
+    try:
+        import pystray  # type: ignore
+
+        def _open(icon, item):
+            try:
+                window.show()
+                window.restore()
+            except Exception:
+                pass
+
+        def _quit(icon, item):
+            try:
+                icon.stop()
+            except Exception:
+                pass
+            on_quit()
+
+        icon = pystray.Icon(
+            "jarvis",
+            _tray_image(),
+            "Jarvis",
+            menu=pystray.Menu(
+                pystray.MenuItem("Open Jarvis", _open, default=True),
+                pystray.MenuItem("Quit", _quit),
+            ),
+        )
+        threading.Thread(target=icon.run, daemon=True, name="tray").start()
+        logger.info("system tray icon started")
+        return True
+    except Exception as exc:
+        logger.warning("tray unavailable (%s) — closing the window will quit Jarvis", exc)
+        return False
+
+
+def _start_hotkey(window) -> None:
+    """Ctrl+J summons the window from anywhere (Windows, native, no deps)."""
+    if not config.hotkey or os.name != "nt":
+        return
+
+    def _loop() -> None:
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            MOD_CONTROL, VK_J, WM_HOTKEY, HOTKEY_ID = 0x0002, 0x4A, 0x0312, 0x1A24
+            if not user32.RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL, VK_J):
+                logger.warning("Ctrl+J hotkey already taken by another app")
+                return
+            logger.info("global hotkey live: Ctrl+J")
+            msg = wintypes.MSG()
+            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+                if msg.message == WM_HOTKEY and msg.wParam == HOTKEY_ID:
+                    try:
+                        window.show()
+                        window.restore()
+                        window.evaluate_js("window.jarvisWake && window.jarvisWake()")
+                    except Exception:
+                        pass
+            user32.UnregisterHotKey(None, HOTKEY_ID)
+        except Exception as exc:
+            logger.warning("hotkey thread died: %s", exc)
+
+    threading.Thread(target=_loop, daemon=True, name="hotkey").start()
+
+
+def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False,
+        start_minimized: bool = False) -> int:
     _init_logging()
     _ensure_ollama_running()
 
@@ -399,6 +481,7 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
         confirm_close=False,
         frameless=False,
         fullscreen=fullscreen,  # belongs on the window, not on start()
+        minimized=start_minimized,
     )
     bridge.window = window
 
@@ -478,21 +561,36 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
 
     threading.Thread(target=_handoff, daemon=True).start()
 
-    def _on_closed() -> None:
+    def _hard_quit() -> None:
         # Make sure the uvicorn thread doesn't keep the process alive.
-        import os
-
         os._exit(0)
 
+    tray_live = _start_tray(window, _hard_quit) if config.tray else False
+    _start_hotkey(window)
+
+    def _on_closed() -> None:
+        _hard_quit()
+
+    def _on_closing() -> bool:
+        if tray_live:
+            # Close button → tuck Jarvis into the system tray instead of
+            # quitting. "Quit" on the tray icon is the real off switch.
+            try:
+                window.hide()
+            except Exception:
+                pass
+            return False  # cancel the close
+        return True
+
     # Different pywebview versions expose `closed` and/or `closing`; hook
-    # whatever exists so the process ALWAYS dies with the window (a survivor
+    # whatever exists so a real close ALWAYS kills the process (a survivor
     # process is what makes the *next* launch misbehave).
-    for evt_name in ("closed", "closing"):
+    for evt_name, handler in (("closed", _on_closed), ("closing", _on_closing)):
         evt = getattr(window.events, evt_name, None)
         if evt is None:
             continue
         try:
-            evt += _on_closed
+            evt += handler
         except Exception:
             logger.warning("couldn't hook window event %s", evt_name)
 

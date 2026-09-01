@@ -10,6 +10,7 @@
 Flags:
     --no-browser    with `web`, don't auto-open a browser tab
     --fullscreen    with the desktop app, start borderless full screen
+    --minimized     with the desktop app, start tucked away (used by Start-with-Windows)
     --dev           with the desktop app, enable the web inspector
     --speak         with `cli`, speak the replies aloud
 """
@@ -58,7 +59,10 @@ def main() -> int:
     if mode in {"app", "ui", "gui", "desktop", "hud"}:
         from jarvis.desktop import run
 
-        return run(fullscreen="--fullscreen" in args, dev="--dev" in args)
+        return run(
+            fullscreen="--fullscreen" in args, dev="--dev" in args,
+            start_minimized=("--minimized" in args or "--tray" in args),
+        )
 
     print(__doc__)
     return 1
