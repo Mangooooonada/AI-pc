@@ -235,9 +235,11 @@ place-items:center;background:#020610;color:#3ce0ff;font-family:'Segoe UI',sans-
 <circle cx="24" cy="24" r="5" fill="#3ce0ff"/></svg>
 <div style="font-size:20px;letter-spacing:.35em;margin-top:18px;color:#eafaff">JARVIS</div>
 <div style="font-size:10px;letter-spacing:.3em;color:#1c6b85;margin-top:8px">BOOTING SYSTEMS…</div>
-<div style="font-size:10px;color:#3d6479;margin-top:26px;max-width:360px;line-height:1.7">
-If this screen stays up for more than a minute, something failed to start —
-check jarvis-launcher.log next to the app.</div>
+<div style="font-size:10px;color:#3d6479;margin-top:26px;max-width:380px;line-height:1.7">
+If this screen stays up for more than a minute, the backend failed to start —
+check jarvis-launcher.log next to the app.<br><br>
+Tip: Python apps launch much faster if the Jarvis folder is on Windows
+Defender's exclusion list (Defender scans every file on boot otherwise).</div>
 </div></body></html>"""
 
 
@@ -300,14 +302,43 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
     )
     bridge.window = window
 
+    def _dead_backend_html() -> str:
+        return """<!doctype html><html><body style="margin:0;height:100vh;display:grid;
+place-items:center;background:#020610;color:#eafaff;font-family:'Segoe UI',sans-serif">
+<div style="text-align:center;max-width:420px">
+<div style="font-size:20px;letter-spacing:.3em;color:#ff5f7e">BOOT FAILURE</div>
+<div style="font-size:11px;color:#5f8ba6;margin-top:18px;line-height:2">
+The Jarvis backend never came up, so the command center can't load.<br>
+Open <b style="color:#3ce0ff">jarvis-launcher.log</b> (next to the app) for the reason,<br>
+or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
+</div></body></html>"""
+
     def _handoff() -> None:
-        if _wait_for_server(port):
+        waited = time.time()
+        # Load the real UI only after BOTH halves are ready:
+        # 1. the GUI loop (splash loaded) — load_url() before it exists is
+        #    dropped silently on some backends and the splash spins forever;
+        # 2. the backend answering HTTP.
+        loaded_evt = getattr(window.events, "loaded", None)
+        try:
+            if loaded_evt is not None:
+                loaded_evt.wait(20)  # GUI loop is up; splash is on screen
+        except Exception:
+            pass
+
+        if _wait_for_server(port, timeout=45.0):
+            logger.info("Backend ready after %.1fs; handing off to the UI", time.time() - waited)
             try:
                 window.load_url(f"http://127.0.0.1:{port}")
                 return
             except Exception:
-                logger.exception("load_url after splash failed")
-        logger.error("Backend failed to start on port %s", port)
+                logger.exception("load_url handoff failed")
+        else:
+            logger.error("Backend failed to start on port %s within 45s", port)
+        try:
+            window.load_html(_dead_backend_html())
+        except Exception:
+            logger.exception("couldn't even show the boot-failure page")
 
     threading.Thread(target=_handoff, daemon=True).start()
 
