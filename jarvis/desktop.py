@@ -20,6 +20,7 @@ a last resort, but now it:
 from __future__ import annotations
 
 import ctypes
+import inspect
 import logging
 import socket
 import sys
@@ -125,6 +126,29 @@ def _gui_candidates() -> List[Optional[str]]:
     candidates.append("cef")  # works without WebView2 when pywin32+cefpython exist
     candidates.append(None)   # last resort: pywebview's own auto-detection
     return candidates
+
+
+def _supported_start_kwargs(webview_module, kwargs: dict) -> dict:
+    """Drop arguments the installed pywebview's start() doesn't accept.
+
+    The exact keyword set of webview.start() varies between releases (e.g.
+    no release accepts ``fullscreen`` there — fullscreen belongs to
+    create_window() — while ``icon`` only exists on newer ones). Passing an
+    unsupported argument raises TypeError and the app would fall back to
+    the browser for no good reason.
+    """
+    try:
+        params = inspect.signature(webview_module.start).parameters
+    except (TypeError, ValueError):
+        # Signature unavailable (wrapped/builtin) — keep only the args that
+        # have existed since pywebview 3.x.
+        return {k: v for k, v in kwargs.items() if k in {"gui", "debug"}}
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return kwargs  # start() accepts **kwargs
+    dropped = sorted(set(kwargs) - set(params))
+    if dropped:
+        logger.info("pywebview.start() here doesn't accept %s; dropping them.", dropped)
+    return {k: v for k, v in kwargs.items() if k in params}
 
 
 def _set_app_identity() -> None:
@@ -250,6 +274,7 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
         text_select=True,
         confirm_close=False,
         frameless=False,
+        fullscreen=fullscreen,  # belongs on the window, not on start()
     )
     bridge.window = window
 
@@ -261,7 +286,7 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
 
     window.events.closed += _on_closed
 
-    start_kwargs = {"debug": dev, "fullscreen": fullscreen}
+    start_kwargs = {"debug": dev}
     if ICON.exists() and not sys.platform.startswith("win"):
         # The `icon` argument is only honoured by the Linux/GTK backend.
         start_kwargs["icon"] = str(ICON)
@@ -272,20 +297,14 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
     if gui:
         start_kwargs["gui"] = gui
 
+    start_kwargs = _supported_start_kwargs(webview, start_kwargs)
+    logger.info("Starting pywebview backend=%s args=%s", gui or "auto", start_kwargs)
+
     try:
         webview.start(**start_kwargs)
         return 0
-    except TypeError:
-        # Older pywebview builds reject some of the keyword arguments.
-        start_kwargs.pop("icon", None)
-        try:
-            webview.start(**start_kwargs)
-            return 0
-        except Exception as exc:
-            logger.exception("webview.start failed after argument fallback")
-            return _browser_fallback(port, f"{type(exc).__name__}: {exc}")
     except Exception as exc:
-        logger.exception("webview.start failed (gui=%s)", gui)
+        logger.exception("webview.start failed (backend=%s)", gui or "auto")
         return _browser_fallback(port, f"{type(exc).__name__}: {exc}")
 
 
