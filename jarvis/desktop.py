@@ -84,6 +84,43 @@ def _wait_for_server(port: int, timeout: float = 25.0) -> bool:
     return False
 
 
+def _backend_alive(port: int, timeout: float = 0.8) -> bool:
+    """Is a Jarvis backend already answering on this port?"""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/status", timeout=timeout
+        ) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _kill_stale_backend(port: int) -> None:
+    """Politely terminate a leftover Jarvis backend from a previous launch.
+
+    The desktop window's close handler os._exit()s, so a healthy past instance
+    never survives — but if the process froze or the event never fired (some
+    pywebview builds), the zombie keeps the port and can chew CPU, which is
+    exactly how 'works the first time, fails every relaunch' happens.
+    """
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/shutdown", data=b"", method="POST"
+        )
+        urllib.request.urlopen(req, timeout=2)
+        logger.info("sent shutdown to the previous Jarvis instance on %s", port)
+    except Exception as exc:
+        logger.info("previous instance on %s didn't accept shutdown (%s)", port, exc)
+    # Give it a moment to die and release the port.
+    deadline = time.time() + 6
+    while time.time() < deadline and _backend_alive(port, timeout=0.4):
+        time.sleep(0.3)
+
+
 def _webview2_runtime_installed() -> bool:
     """Detect the Edge WebView2 runtime via the registry (Windows only)."""
     if not sys.platform.startswith("win"):
@@ -270,14 +307,25 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
             pass
         return 0
 
-    port = port or _free_port(config.port)
+    port = port or config.port
+
+    # If a previous Jarvis instance never fully died, its backend still owns
+    # the default port and can starve this launch. Retire it first.
+    if _backend_alive(port):
+        logger.info("found a leftover Jarvis backend on port %s; retiring it", port)
+        _kill_stale_backend(port)
+
+    port = _free_port(port)
 
     def _serve() -> None:
         try:
+            logger.info("backend: importing server package…")
+            t_imp = time.time()
             import uvicorn
 
             from .server import app
 
+            logger.info("backend: imports took %.1fs; binding port %s", time.time() - t_imp, port)
             uvicorn.run(app, host="127.0.0.1", port=port, log_level="error")
         except Exception:
             # Under pythonw.exe there is no console — without this the backend
@@ -399,7 +447,17 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
 
         os._exit(0)
 
-    window.events.closed += _on_closed
+    # Different pywebview versions expose `closed` and/or `closing`; hook
+    # whatever exists so the process ALWAYS dies with the window (a survivor
+    # process is what makes the *next* launch misbehave).
+    for evt_name in ("closed", "closing"):
+        evt = getattr(window.events, evt_name, None)
+        if evt is None:
+            continue
+        try:
+            evt += _on_closed
+        except Exception:
+            logger.warning("couldn't hook window event %s", evt_name)
 
     start_kwargs = {"debug": dev}
     if ICON.exists() and not sys.platform.startswith("win"):

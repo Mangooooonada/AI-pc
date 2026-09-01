@@ -182,6 +182,20 @@ def speak(body: SpeakIn) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+@app.post("/api/shutdown")
+def shutdown() -> Dict[str, Any]:
+    """Terminate this backend process (used by the desktop launcher to clear
+    a stale previous instance before booting a fresh one)."""
+
+    def _kill() -> None:
+        import os
+
+        os._exit(0)
+
+    threading.Timer(0.4, _kill).start()
+    return {"ok": True, "shutting_down": True}
+
+
 @app.post("/api/reset")
 def reset() -> Dict[str, Any]:
     get_agent().reset()
