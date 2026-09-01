@@ -837,6 +837,28 @@ def shutdown_app() -> Dict[str, Any]:
 if WEB_DIR.exists():
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
+    # PWA files must answer at the ROOT: a service worker under /static would
+    # only control /static/* (scope = its directory), and manifests/icons are
+    # fetched root-relative by install prompts.
+    @app.get("/sw.js", include_in_schema=False)
+    def _sw() -> FileResponse:
+        return FileResponse(WEB_DIR / "sw.js", media_type="application/javascript",
+                            headers={"Service-Worker-Allowed": "/",
+                                     "Cache-Control": "no-cache"})
+
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    def _manifest() -> FileResponse:
+        return FileResponse(WEB_DIR / "manifest.webmanifest",
+                            media_type="application/manifest+json")
+
+    @app.get("/icon-192.png", include_in_schema=False)
+    def _icon192() -> FileResponse:
+        return FileResponse(WEB_DIR / "icon-192.png", media_type="image/png")
+
+    @app.get("/icon-512.png", include_in_schema=False)
+    def _icon512() -> FileResponse:
+        return FileResponse(WEB_DIR / "icon-512.png", media_type="image/png")
+
     @app.get("/")
     def index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html")

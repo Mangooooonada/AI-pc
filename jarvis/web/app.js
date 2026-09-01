@@ -1215,5 +1215,5 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
   // Always-listening wake word, if the user armed it.
   if (localStorage.getItem("jarvis.listen") === "on") setTimeout(startWakeLoop, 1500);
 
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 })();
