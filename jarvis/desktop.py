@@ -218,6 +218,29 @@ def _browser_fallback(port: int, reason: str) -> int:
     return 0
 
 
+def _splash_html() -> str:
+    """Boot screen shown instantly while the backend warms up."""
+    return """<!doctype html><html><body style="margin:0;height:100vh;display:grid;
+place-items:center;background:#020610;color:#3ce0ff;font-family:'Segoe UI',sans-serif">
+<div style="text-align:center">
+<svg width="86" height="86" viewBox="0 0 48 48" style="margin:0 auto;display:block">
+<circle cx="24" cy="24" r="20" fill="none" stroke="#3ce0ff" stroke-width="2"
+ stroke-dasharray="60 20" opacity=".7">
+ <animateTransform attributeName="transform" type="rotate" from="0 24 24" to="360 24 24" dur="3s" repeatCount="indefinite"/>
+</circle>
+<circle cx="24" cy="24" r="12" fill="none" stroke="#12a8cf" stroke-width="2"
+ stroke-dasharray="26 14" opacity=".8">
+ <animateTransform attributeName="transform" type="rotate" from="360 24 24" to="0 24 24" dur="2s" repeatCount="indefinite"/>
+</circle>
+<circle cx="24" cy="24" r="5" fill="#3ce0ff"/></svg>
+<div style="font-size:20px;letter-spacing:.35em;margin-top:18px;color:#eafaff">JARVIS</div>
+<div style="font-size:10px;letter-spacing:.3em;color:#1c6b85;margin-top:8px">BOOTING SYSTEMS…</div>
+<div style="font-size:10px;color:#3d6479;margin-top:26px;max-width:360px;line-height:1.7">
+If this screen stays up for more than a minute, something failed to start —
+check jarvis-launcher.log next to the app.</div>
+</div></body></html>"""
+
+
 def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False) -> int:
     _init_logging()
 
@@ -255,17 +278,16 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
 
     threading.Thread(target=_serve, daemon=True).start()
 
-    if not _wait_for_server(port):
-        logger.error("Backend failed to start on port %s", port)
-        _explain_fallback("the backend server failed to start", f"http://127.0.0.1:{port}")
-        return 1
-
     _set_app_identity()
 
+    # Paint the OS window IMMEDIATELY with a boot splash, then swap in the
+    # real UI as soon as the backend answers — no more staring at nothing
+    # (or a blank white pane) while imports and provider probes run.
     bridge = Bridge()
     window = webview.create_window(
         WINDOW_TITLE,
-        f"http://127.0.0.1:{port}",
+        url=None,
+        html=_splash_html(),
         width=1440,
         height=900,
         min_size=(1080, 680),
@@ -277,6 +299,17 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False)
         fullscreen=fullscreen,  # belongs on the window, not on start()
     )
     bridge.window = window
+
+    def _handoff() -> None:
+        if _wait_for_server(port):
+            try:
+                window.load_url(f"http://127.0.0.1:{port}")
+                return
+            except Exception:
+                logger.exception("load_url after splash failed")
+        logger.error("Backend failed to start on port %s", port)
+
+    threading.Thread(target=_handoff, daemon=True).start()
 
     def _on_closed() -> None:
         # Make sure the uvicorn thread doesn't keep the process alive.

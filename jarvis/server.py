@@ -29,7 +29,22 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-agent = Agent()
+# The agent is constructed lazily on first use: Agent() probes LLM providers
+# (HTTP calls to Ollama etc.) and that cost must not sit on the app's boot
+# path — the desktop window should paint first.
+_agent: Optional[Agent] = None
+_agent_lock = threading.Lock()
+
+
+def get_agent() -> Agent:
+    global _agent
+    if _agent is None:
+        with _agent_lock:
+            if _agent is None:
+                _agent = Agent()
+    return _agent
+
+
 state.bump_boot()
 
 
@@ -62,7 +77,8 @@ class MemoryIn(BaseModel):
 # ------------------------------------------------------------------- core --
 @app.get("/api/status")
 def status() -> Dict[str, Any]:
-    st = agent.status()
+    ag = get_agent()
+    st = ag.status()
     st.update(
         {
             "voice_enabled": config.voice_enabled,
@@ -71,7 +87,7 @@ def status() -> Dict[str, Any]:
             "version": __import__("jarvis").__version__,
             "hostname": socket.gethostname(),
             "os": f"{platform.system()} {platform.release()}",
-            "overview": agents_mod.core_overview(agent.provider_name, st["model"]),
+            "overview": agents_mod.core_overview(ag.provider_name, st["model"]),
             "stats": state.stats(),
         }
     )
@@ -80,9 +96,10 @@ def status() -> Dict[str, Any]:
 
 @app.post("/api/chat")
 def chat(body: ChatIn) -> Dict[str, Any]:
-    if body.provider and body.provider != agent.provider_name:
-        agent.reload_provider(body.provider)
-    turn = agent.ask(body.message)
+    ag = get_agent()
+    if body.provider and body.provider != ag.provider_name:
+        ag.reload_provider(body.provider)
+    turn = ag.ask(body.message)
     state.log_turn(body.message, turn.reply, turn.actions, turn.provider)
     return {
         "reply": turn.reply,
@@ -106,9 +123,10 @@ def chat_stream(body: ChatIn) -> StreamingResponse:
 
     def run() -> None:
         try:
-            if body.provider and body.provider != agent.provider_name:
-                agent.reload_provider(body.provider)
-            turn = agent.ask(
+            ag = get_agent()
+            if body.provider and body.provider != ag.provider_name:
+                ag.reload_provider(body.provider)
+            turn = ag.ask(
                 body.message,
                 on_action=lambda skill, res: events.put(
                     ("action", {"skill": skill, "arguments": {}, "result": res})
@@ -166,13 +184,13 @@ def speak(body: SpeakIn) -> Dict[str, Any]:
 
 @app.post("/api/reset")
 def reset() -> Dict[str, Any]:
-    agent.reset()
+    get_agent().reset()
     return {"ok": True}
 
 
 @app.post("/api/provider/{name}")
 def set_provider(name: str) -> Dict[str, Any]:
-    return agent.reload_provider(name)
+    return get_agent().reload_provider(name)
 
 
 # ------------------------------------------------------------- telemetry ---
@@ -210,7 +228,7 @@ def system_metrics() -> Dict[str, Any]:
 
 @app.get("/api/agents")
 def get_agents() -> Dict[str, Any]:
-    return {"agents": agents_mod.agents(agent.provider_name)}
+    return {"agents": agents_mod.agents(get_agent().provider_name)}
 
 
 @app.get("/api/llms")
@@ -220,7 +238,7 @@ def get_llms() -> Dict[str, Any]:
 
 @app.get("/api/feed")
 def get_feed() -> Dict[str, Any]:
-    return {"items": agents_mod.intelligence_feed(agent.provider_name)}
+    return {"items": agents_mod.intelligence_feed(get_agent().provider_name)}
 
 
 @app.get("/api/environment")
@@ -343,7 +361,7 @@ def get_conversations() -> Dict[str, Any]:
 @app.delete("/api/conversations")
 def clear_conversations() -> Dict[str, Any]:
     state.clear_conversations()
-    agent.reset()
+    get_agent().reset()
     return {"ok": True}
 
 

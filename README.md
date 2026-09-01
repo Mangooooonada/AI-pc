@@ -19,7 +19,7 @@ It is not a website. It opens in its own OS window, with its own taskbar entry a
 │ ▸ Calendar ├──────────────┴─────────┬─────────────┴───────────────┤
 │ ▸ Memory   │  ACTIVE AGENTS         │ TIMELINE    │ QUICK COMMANDS│
 │ ▸ Convos   ├────────────┬───────────┴─────────────┴───────────────┤
-│ ▸ Tools 42 │ SYS MONITOR│ MEMORY INSIGHTS │  LLM STATUS           │
+│ ▸ Tools 51 │ SYS MONITOR│ MEMORY INSIGHTS │  LLM STATUS           │
 │  ◉ VOICE   │  ◔ ◔ ◔     │  ⋰⋱ 3,380       │  ● Ollama  ○ OpenAI   │
 └────────────┴────────────┴─────────────────┴───────────────────────┘
   📍 Location   ☀ Weather   📶 Network    〰 TALK TO JARVIS 〰    ▶ Briefing
@@ -82,7 +82,7 @@ that pauses media, mutes audio and dims the display in one click.
 - **LLM Status** — which providers are genuinely reachable right now.
 
 **Other views** — AI Core (full chat + provider control), Agents, Tasks (add/complete/delete),
-Calendar, Memory, Conversations, Knowledge Base, Tools & Skills (all 42, grouped and filterable),
+Calendar, Memory, Conversations, Knowledge Base, Tools & Skills (all 51, grouped and filterable),
 Workflows.
 
 **Status bar** — your location, live weather, connectivity, a centre **TALK TO JARVIS** button
@@ -190,7 +190,7 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 
 ---
 
-## What it can do — 42 skills
+## What it can do — 51 skills
 
 | Area | Say something like |
 |---|---|
@@ -204,7 +204,9 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 | **Tasks** | "add a task finish the report at 5pm", "what are my tasks", "mark report as done" |
 | **Memory** | "remember that I prefer dark mode", "what do you know about me" |
 | **Workflows** | "run workflow Focus Mode", "brief me" |
-| **Web** | "what's the weather", "what's the news", "who is Ada Lovelace", "google mechanical keyboards" |
+| **Web** | "what's the weather", "what's the news", "who is Ada Lovelace", "google mechanical keyboards", "read the page https://…" |
+| **Security** | "security report", "scan for viruses", "check for suspicious processes", "startup audit", "disable startup item Spotify" |
+| **Tune-up** | "speed up my pc", "clean my memory", "clean temp files", "why is boot so slow" |
 | **Utilities** | "what time is it", "set a timer for 10 minutes", "what is 15% of 240", "tell me a joke" |
 
 Tasks, memories, conversations and workflows persist in

@@ -618,6 +618,8 @@ async function loadQuick() {
     ["Take Screenshot", "camera", () => sendMessage("take a screenshot", true)],
     ["Open Calendar", "calendar", () => go("calendar")],
     ["System Report", "cpu", () => sendMessage("system status", true)],
+    ["Security Scan", "alert", () => sendMessage("security report", true)],
+    ["Speed Up My PC", "power", () => sendMessage("speed up my pc", true)],
     ["Start Voice Chat", "voice", () => toggleMic()],
     ["Run Workflow", "flow", () => go("workflows")],
     ["Lock Computer", "power", () => sendMessage("lock the computer", true)],
@@ -653,7 +655,13 @@ function renderKB() {
     ["Workflows", `<p>Chain skills into one command. Run them from the <b>Workflows</b> panel or say “run workflow Focus Mode”. Add your own in <code>jarvis/state.py</code>.</p>`],
     ["Files & research", `<ul><li>“what's in my downloads folder”</li><li>“find files named invoice”</li>
       <li>“clean my downloads”</li><li>“what's the weather”, “what's the news”</li>
-      <li>“who is Ada Lovelace”</li></ul>`],
+      <li>“who is Ada Lovelace”, “read the page https://…”</li></ul>`],
+    ["Security & tune-up", `<ul><li>“security report” — antivirus + processes + startup</li>
+      <li>“scan for viruses”, “run an antivirus scan” (Windows Defender)</li>
+      <li>“startup audit”, “disable startup item Spotify”</li>
+      <li>“find suspicious processes”</li>
+      <li>“speed up my pc”, “clean my memory”, “clean temp files”</li></ul>
+      <p>Everything flagged is read-only until you approve the change.</p>`],
   ];
   $("#kb").innerHTML = cards.map(([t, b]) => `<div class="kb-card"><h3>${t}</h3>${b}</div>`).join("");
 }
