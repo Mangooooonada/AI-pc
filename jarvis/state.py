@@ -291,6 +291,24 @@ def drain_notifications() -> List[Dict[str, Any]]:
     return notes
 
 
+def audit(kind: str, **fields) -> None:
+    """Append to the audit ledger of external/off-device calls (bounded)."""
+    entry = {"id": str(uuid.uuid4())[:8], "at": _now(), "kind": kind, **fields}
+    with _LOCK:
+        log = _STATE.setdefault("audit", [])
+        log.append(entry)
+        del log[:-500]
+    save()
+
+
+def list_audit(limit: int = 100, kind: str = "") -> List[Dict[str, Any]]:
+    with _LOCK:
+        rows = list(_STATE.setdefault("audit", []))
+    if kind:
+        rows = [r for r in rows if r.get("kind") == kind]
+    return list(reversed(rows))[:limit]
+
+
 def mark_task_notified(task_id: str) -> bool:
     with _LOCK:
         for t in _STATE["tasks"]:

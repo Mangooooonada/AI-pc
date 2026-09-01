@@ -93,6 +93,8 @@ class Agent:
                     "phrase it as a short command — the right skill appears on the next turn."
                 )
             messages = [{"role": "system", "content": prompt}] + self.history
+            from ..privacy import guard as _privacy_guard
+            messages = _privacy_guard(self.provider, messages)
             try:
                 stream_fn = getattr(self.provider, "chat_stream", None)
                 if on_token and callable(stream_fn):

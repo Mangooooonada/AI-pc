@@ -157,6 +157,18 @@ restarts.
 - **Thinking models** (qwen3 family): set `OLLAMA_THINK=false` if you want fast
   plain answers without visible reasoning time.
 
+### Privacy guard + audit trail (their "Privacy Guard Core")
+
+`JARVIS_PRIVACY` in Settings (or .env) sets one of three modes:
+- **strict** — cloud LLM calls are refused outright; Jarvis runs on Ollama/offline only.
+- **guarded** *(default)* — cloud is allowed, but API keys, `ghp_`/`sk-`/Slack/AWS/Google
+  tokens, `password: …`/`token=…` values and private-key blocks are redacted from every
+  outbound message before it leaves the PC (your own on-disk history stays intact).
+- **relaxed** — cloud allowed, no redaction.
+
+Every external call is written to a replayable **audit ledger** (`GET /api/audit`,
+capped at 500 entries) recording provider, model, redaction count and strict-blocks.
+
 ### Dual brains + smart skill packing
 
 - **Dual-brain routing** — set `OLLAMA_MODEL_BIG` (Settings → Brain, e.g. `qwen3:32b`) and long/code/analysis questions are routed to the heavy model automatically; quick chatter stays on the fast daily driver. Missing model? Jarvis warns once and stays put.

@@ -223,7 +223,8 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
         {"key": "JARVIS_BRIEFING", "attr": "briefing", "label": "Morning briefing on first launch of the day", "kind": "bool"},
         {"key": "JARVIS_HOTKEY", "attr": "hotkey", "label": "Ctrl+J summons Jarvis from anywhere (Windows)", "kind": "bool"},
     ]},
-    {"section": "Safety", "blurb": "What Jarvis is allowed to do without asking twice.", "fields": [
+    {"section": "Safety", "blurb": "What Jarvis is allowed to do — and what may leave this PC. Privacy: strict = local models only · guarded = secrets redacted before any cloud call · relaxed = no redaction. Every external call is written to the audit ledger (Settings → note, GET /api/audit).", "fields": [
+        {"key": "JARVIS_PRIVACY", "attr": "privacy_mode", "label": "Privacy mode", "kind": "text", "placeholder": "strict | guarded | relaxed", "danger": True},
         {"key": "JARVIS_ALLOW_POWER", "attr": "allow_power", "label": "Allow power commands (shutdown / restart / sleep)", "kind": "bool", "danger": True},
         {"key": "JARVIS_ALLOW_SHELL", "attr": "allow_shell", "label": "Allow raw shell commands — dangerous", "kind": "bool", "danger": True},
     ]},
@@ -471,6 +472,8 @@ def update_settings(body: SettingsIn) -> Dict[str, Any]:
                 value = str(raw).strip()
         except (TypeError, ValueError):
             return {"ok": False, "error": f"bad value for {key}"}
+        if f["key"] == "JARVIS_PRIVACY" and str(value).lower() not in {"strict", "guarded", "relaxed"}:
+            return {"ok": False, "error": "privacy mode must be strict, guarded or relaxed"}
         setattr(config, f["attr"], value)
         applied[key] = str(value).lower() if isinstance(value, bool) else str(value)
 
@@ -689,6 +692,11 @@ def remove_memory(mem_id: str) -> Dict[str, Any]:
 @app.get("/api/conversations")
 def get_conversations() -> Dict[str, Any]:
     return {"conversations": state.list_conversations(limit=100)}
+
+
+@app.get("/api/audit")
+def get_audit(limit: int = 100, kind: str = "") -> Dict[str, Any]:
+    return {"entries": state.list_audit(limit=limit, kind=kind)}
 
 
 @app.delete("/api/conversations")

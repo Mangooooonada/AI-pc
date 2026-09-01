@@ -130,6 +130,8 @@ class Config:
 
     # --- safety -------------------------------------------------------------
     # Destructive skills (shutdown, kill process, delete) require confirmation.
+    # Privacy guard: strict (local only) / guarded (redact secrets) / relaxed
+    privacy_mode: str = os.getenv("JARVIS_PRIVACY", "guarded").strip().lower()
     allow_power: bool = _bool("JARVIS_ALLOW_POWER", True)
     allow_shell: bool = _bool("JARVIS_ALLOW_SHELL", False)
     # Resident-assistant behaviours.
