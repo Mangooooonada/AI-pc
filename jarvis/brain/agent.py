@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from ..config import config
-from ..skills import REGISTRY, run_skill, tool_schemas
+from ..skills import REGISTRY, pack_tools, run_skill
 from .prompts import system_prompt
 from .providers import ProviderError, get_provider
 
@@ -80,12 +80,19 @@ class Agent:
         self._trim()
 
         actions: List[Dict[str, Any]] = []
-        tools = tool_schemas()
+        tools, hidden_tools = pack_tools(text)
         error: Optional[str] = None
         degraded = False  # real brain failed this turn → offline stand-in
 
         for _ in range(MAX_TOOL_ROUNDS):
-            messages = [{"role": "system", "content": system_prompt()}] + self.history
+            prompt = system_prompt()
+            if hidden_tools:
+                prompt += (
+                    f"\nNote: {hidden_tools} less-relevant skills are hidden this turn to keep you "
+                    "fast. If none of the listed tools fit, just say you cannot and suggest the user "
+                    "phrase it as a short command — the right skill appears on the next turn."
+                )
+            messages = [{"role": "system", "content": prompt}] + self.history
             try:
                 stream_fn = getattr(self.provider, "chat_stream", None)
                 if on_token and callable(stream_fn):

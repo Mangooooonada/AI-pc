@@ -163,6 +163,8 @@ class OllamaProvider:
         # Set to True when Ollama says the model "does not support tools" —
         # we then quietly run without skills for the rest of the session.
         self._no_tools = False
+        # Dual-brain routing cache: is OLLAMA_MODEL_BIG installed?
+        self._big_ok: Optional[bool] = None
         if not config.ollama_available():
             raise ProviderError(
                 f"Ollama isn't reachable at {self.host}. Start it with 'ollama serve'."
@@ -200,8 +202,8 @@ class OllamaProvider:
 
         return min(installed, key=score)
 
-    def _model_installed(self, installed: List[str]) -> bool:
-        want = self.model
+    def _model_installed(self, installed: List[str], want: str = "") -> bool:
+        want = want or self.model
         return any(
             m == want or m == f"{want}:latest" or m.split(":")[0] == want
             for m in installed
@@ -217,6 +219,35 @@ class OllamaProvider:
         "Tool use is unavailable right now. Answer the user's last message "
         "directly in plain prose — no JSON, no code blocks, no curly braces."
     )
+    # Turn smells like it needs the heavy brain? (dual-brain routing)
+    _HEAVY_PAT = re.compile(
+        r"(```|\bcode\b|\bdebug\b|\brefactor\b|\bessay\b|\banaly[sz]e\b|"
+        r"\bcompare\b|\bexplain\b|\bwrite (?:a|an|me|some)\b|\bdesign\b|"
+        r"\boptimi[sz]e\b|\bstory\b|\breport\b|\bplan\b|\bwalk me through\b)",
+        re.I,
+    )
+
+    def _route_model(self, messages: List[Dict]) -> str:
+        """Dual-brain: quick model for chatter, OLLAMA_MODEL_BIG for heavy turns."""
+        big = (getattr(config, "ollama_model_big", "") or "").strip()
+        if not big:
+            return self.model
+        if getattr(self, "_big_ok", None) is None:
+            self._big_ok = self._model_installed(config.ollama_models(), want=big)
+            if not self._big_ok:
+                log.warning(
+                    "ollama: heavy brain '%s' isn't pulled; staying on '%s'", big, self.model
+                )
+        if not self._big_ok:
+            return self.model
+        last = next(
+            ((m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+        if (len(last) > 240 or self._HEAVY_PAT.search(last)) and big != self.model:
+            log.info("ollama: heavy turn routed to '%s'", big)
+            return big
+        return self.model
 
     def _build_payload(self, messages: List[Dict], tools: Optional[List[Dict]],
                        stream: bool) -> Dict[str, Any]:
@@ -228,7 +259,7 @@ class OllamaProvider:
                 c["content"] = ""
             clean.append(c)
         payload: Dict[str, Any] = {
-            "model": self.model,
+            "model": self._route_model(messages),
             "messages": clean,
             "stream": stream,
             "keep_alive": config.ollama_keep_alive,

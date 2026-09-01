@@ -71,6 +71,55 @@ def tool_schemas() -> List[Dict[str, Any]]:
     return [s.schema() for s in REGISTRY.values()]
 
 
+# Always offered, whatever the user says — memory, identity and the two
+# escape hatches are cheap and frequently useful mid-conversation.
+_PACK_ALWAYS = {"remember", "recall", "who_am_i", "web_search", "list_capabilities"}
+
+
+def pack_tools(user_text: str, limit: int = 0) -> tuple[List[Dict[str, Any]], int]:
+    """Pick the most relevant tool schemas for this message.
+
+    50+ schemas swamp a 7B local model: they eat context AND make malformed
+    tool-call output (the Ollama "closing '}'" 400) measurably more likely.
+    Packing the ~16 most relevant ones per message keeps small models sharp.
+    """
+    from ..config import config  # local import: avoid module cycles
+
+    tools = tool_schemas()
+    limit = max(6, limit or getattr(config, "tool_pack", 16))
+    if len(tools) <= limit:
+        return tools, 0
+
+    text = normalize(user_text or "")
+    words = {w for w in re.split(r"\W+", text) if len(w) > 2}
+    scored: List[tuple[float, str]] = []
+    for sk in REGISTRY.values():
+        best = 55.0 if sk.name in _PACK_ALWAYS else 0.0
+        name_words = set(sk.name.split("_"))
+        for trigger in sk.triggers:
+            trig = normalize(trigger)
+            parts = re.split(r"\{(\w+)\}", trig)
+            pattern, literal = "", 0
+            for i, part in enumerate(parts):
+                if i % 2:
+                    pattern += r".+?"
+                else:
+                    pattern += re.escape(part)
+                    literal += len(part.strip())
+            if re.search(pattern + r"\s*$", text) or re.fullmatch(pattern, text):
+                best = max(best, 10_000.0 + literal)
+                continue
+            trig_words = {w for w in re.split(r"\W+", trig) if len(w) > 2}
+            overlap = len((trig_words | name_words) & words)
+            best = max(best, overlap * 100.0 + literal)
+        scored.append((-best, sk.name))
+
+    scored.sort()
+    keep = {name for _, name in scored[:limit]}
+    packed = [t for t in tools if t["function"]["name"] in keep]
+    return packed, len(tools) - len(packed)
+
+
 def run_skill(name: str, arguments: Dict[str, Any]) -> str:
     sk = REGISTRY.get(name)
     if sk is None:
@@ -145,4 +194,4 @@ def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
 
 
 # Importing the modules below populates REGISTRY.
-from . import system, apps, media, files, web, knowledge, agenda, security  # noqa: E402,F401
+from . import system, apps, media, files, web, knowledge, agenda, security, vision  # noqa: E402,F401

@@ -110,6 +110,12 @@ class Config:
     # Optional on/off for thinking-type models (e.g. qwen3): leave unset to
     # let the model decide, set OLLAMA_THINK=false to force plain answers.
     ollama_think: str = os.getenv("OLLAMA_THINK", "").strip().lower()
+    # Heavy + vision sidekicks for the local brain. Blank = feature off.
+    ollama_model_big: str = os.getenv("OLLAMA_MODEL_BIG", "")
+    ollama_vision_model: str = os.getenv("OLLAMA_VISION_MODEL", "")
+    # How many tool schemas a turn is allowed to see. Smaller packs = fewer
+    # malformed tool calls out of small models + more context for chat.
+    tool_pack: int = int(os.getenv("JARVIS_TOOL_PACK", "16"))
     temperature: float = float(os.getenv("JARVIS_TEMPERATURE", "0.4"))
     max_history: int = int(os.getenv("JARVIS_MAX_HISTORY", "20"))
 
@@ -126,6 +132,14 @@ class Config:
     # Destructive skills (shutdown, kill process, delete) require confirmation.
     allow_power: bool = _bool("JARVIS_ALLOW_POWER", True)
     allow_shell: bool = _bool("JARVIS_ALLOW_SHELL", False)
+    # Resident-assistant behaviours.
+    briefing: bool = _bool("JARVIS_BRIEFING", True)   # morning briefing on first launch of the day
+    tray: bool = _bool("JARVIS_TRAY", True)           # close → system tray instead of quitting
+    hotkey: bool = _bool("JARVIS_HOTKEY", True)       # Ctrl+J summons the window (Windows)
+    # Share the UI on the local network (phone control). Enabling binds the
+    # server to 0.0.0.0 on next launch and requires net_key from other devices.
+    network: bool = _bool("JARVIS_NETWORK", False)
+    net_key: str = os.getenv("JARVIS_NET_KEY", "")
     workspace: Path = field(
         default_factory=lambda: Path(
             os.getenv("JARVIS_WORKSPACE", str(Path.home() / "JarvisFiles"))

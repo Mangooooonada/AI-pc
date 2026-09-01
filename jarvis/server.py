@@ -190,8 +190,11 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
         {"key": "JARVIS_TEMPERATURE", "attr": "temperature", "label": "Creativity (temperature)", "kind": "range", "min": 0, "max": 1.5, "step": 0.05},
         {"key": "JARVIS_MAX_HISTORY", "attr": "max_history", "label": "Conversation memory depth", "kind": "range", "min": 4, "max": 60, "step": 2},
         {"key": "OLLAMA_MODEL", "attr": "ollama_model", "label": "Ollama model", "kind": "text", "placeholder": "blank = auto-pick"},
+        {"key": "OLLAMA_MODEL_BIG", "attr": "ollama_model_big", "label": "Heavy brain for hard questions", "kind": "text", "placeholder": "e.g. qwen3:32b (blank = off)"},
+        {"key": "OLLAMA_VISION_MODEL", "attr": "ollama_vision_model", "label": "Vision model (screen eyes)", "kind": "text", "placeholder": "blank = auto-detect llava/qwen3-vl"},
         {"key": "OLLAMA_NUM_CTX", "attr": "ollama_num_ctx", "label": "Ollama context size", "kind": "number", "min": 2048, "max": 131072, "step": 1024},
         {"key": "OLLAMA_KEEP_ALIVE", "attr": "ollama_keep_alive", "label": "Keep model loaded", "kind": "text", "placeholder": "30m  (-1 = forever)"},
+        {"key": "JARVIS_TOOL_PACK", "attr": "tool_pack", "label": "Skills offered per message", "kind": "number", "min": 6, "max": 60, "step": 1},
     ]},
     {"section": "Safety", "blurb": "What Jarvis is allowed to do without asking twice.", "fields": [
         {"key": "JARVIS_ALLOW_POWER", "attr": "allow_power", "label": "Allow power commands (shutdown / restart / sleep)", "kind": "bool", "danger": True},
