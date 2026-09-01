@@ -247,7 +247,10 @@ def _browser_fallback(port: int, reason: str) -> int:
     """Last resort: serve the UI and open it in the default browser."""
     url = f"http://127.0.0.1:{port}"
     _explain_fallback(reason, url)
-    webbrowser.open(url)
+    if _wait_for_server(port):  # backend thread may still be warming up
+        webbrowser.open(url)
+    else:
+        logger.error("fallback: backend never answered on %s", port)
     try:
         while True:  # keep the backend thread alive for the browser tab
             time.sleep(1)
@@ -547,6 +550,7 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
                 try:
                     window.load_url(f"http://127.0.0.1:{port}")
                     logger.info("UI loaded (load_url attempt %d)", attempt)
+                    ui_state["loaded"] = True
                     return
                 except Exception as exc:
                     logger.info("load_url attempt %d not accepted yet: %s", attempt, exc)
@@ -594,6 +598,8 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
         except Exception:
             logger.warning("couldn't hook window event %s", evt_name)
 
+    ui_state = {"loaded": False}  # set by _handoff the moment the page paints
+
     start_kwargs = {"debug": dev}
     if ICON.exists() and not sys.platform.startswith("win"):
         # The `icon` argument is only honoured by the Linux/GTK backend.
@@ -610,6 +616,14 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
 
     try:
         webview.start(**start_kwargs)
+        # Every clean exit path (window X, tray Quit) os._exit()s inside the
+        # close handlers, so start() returning early means the WebView2 window
+        # died during init without raising (locked profile / GPU hiccup) —
+        # the 'splash logs then silence' failure. Never exit mute: hand the
+        # user the browser UI instead.
+        if not ui_state["loaded"]:
+            logger.warning("webview window never loaded its UI (silent WebView2 death)")
+            return _browser_fallback(port, "WebView2 window vanished during init")
         return 0
     except Exception as exc:
         logger.exception("webview.start failed (backend=%s)", gui or "auto")
