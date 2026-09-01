@@ -68,6 +68,31 @@ call .venv\Scripts\python.exe -m compileall -q jarvis >nul 2>nul
 call .venv\Scripts\python.exe -m compileall -q ".venv\Lib" >nul 2>nul
 echo   [OK] Bytecode cached.
 
+REM ── Optional: stop Windows Defender rescanning this folder on every launch ──
+set "JARVIS_DIR=%CD%"
+powershell -NoProfile -Command "try { if ((Get-MpPreference).ExclusionPath -contains '%JARVIS_DIR%') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>nul
+if not errorlevel 1 (
+  echo   [OK] Defender exclusion already covers this folder.
+  goto :after_exclusion
+)
+echo.
+echo   [Tip] Windows Defender re-scans every Python file here on every launch,
+echo         which is why startup is slow. I can add an exclusion for THIS
+echo         folder only ^(everything else stays fully protected^).
+echo         An admin prompt will pop up - approve it to continue.
+set /p ADDX=        Add the exclusion now? [Y/n] 
+if /i "%ADDX%"=="n" goto :after_exclusion
+powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-Command','Add-MpPreference -ExclusionPath ''%JARVIS_DIR%''; Add-MpPreference -ExclusionProcess ''%JARVIS_DIR%\.venv\Scripts\python.exe''; Add-MpPreference -ExclusionProcess ''%JARVIS_DIR%\.venv\Scripts\pythonw.exe'''"
+powershell -NoProfile -Command "try { if ((Get-MpPreference).ExclusionPath -contains '%JARVIS_DIR%') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>nul
+if errorlevel 1 (
+  echo   [!] Couldn't confirm the exclusion ^(admin prompt declined?^).
+  echo       Later, in an admin PowerShell, run:
+  echo       Add-MpPreference -ExclusionPath "%JARVIS_DIR%"
+) else (
+  echo   [OK] Exclusion added - launches should be noticeably faster now.
+)
+:after_exclusion
+
 echo.
 echo   Setup complete.
 echo.
