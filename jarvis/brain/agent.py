@@ -61,6 +61,21 @@ class Agent:
         if not text:
             return Turn(reply="", provider=self.provider_name)
 
+        # Booted before the brain was ready? While offline we re-run the
+        # provider pick each turn (one quick local ping), so the moment
+        # Ollama/OpenAI becomes reachable Jarvis takes it — no restart,
+        # no button to press.
+        if self.provider_name == "offline":
+            try:
+                upgraded, up_errors = get_provider(None)
+                if getattr(upgraded, "name", "offline") != "offline":
+                    self.provider = upgraded
+                    self.provider_errors = up_errors + [
+                        f"brain came online via {self.provider_name} — real answers are back"
+                    ]
+            except Exception:
+                pass  # stay offline this turn
+
         self.history.append({"role": "user", "content": text})
         self._trim()
 

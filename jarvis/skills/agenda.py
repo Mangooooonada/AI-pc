@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from . import skill
 from .. import state
+from ..config import config
 
 
 def parse_when(text: str) -> Optional[str]:
@@ -180,7 +181,11 @@ def remember(text: str, kind: str = "fact") -> str:
         "type": "object",
         "properties": {"query": {"type": "string", "description": "What to search for"}},
     },
-    triggers=["what do you remember about {query}", "recall {query}", "what do you know about me"],
+    triggers=[
+        "what do you remember about {query}", "recall {query}",
+        "what do you know about me", "what do you know about {query}",
+        "what is my {query}", "who is my {query}", "do you remember my {query}",
+    ],
 )
 def recall(query: str = "") -> str:
     mems = state.list_memories(limit=12, query=query or "")
@@ -192,6 +197,30 @@ def recall(query: str = "") -> str:
     for m in mems:
         rows.append(f"  • {m['text']}")
     return "\n".join(rows)
+
+
+@skill(
+    "who_am_i",
+    "Answer 'who am I' / 'what is my name' from long-term memory.",
+    {"type": "object", "properties": {}},
+    triggers=[
+        "who am i", "what is my name", "do you know my name",
+        "you know my name", "say my name",
+    ],
+)
+def who_am_i() -> str:
+    for m in state.list_memories(limit=100):
+        hit = re.search(
+            r"(?:my name is|call me|name is|i am called)\s+([A-Za-z][\w'’ .-]{0,38})",
+            m["text"], re.I,
+        )
+        if hit:
+            who = hit.group(1).strip().rstrip(".")
+            return f"You're {who}, {config.user_title}. It's right there in my memory."
+    return (
+        f"You haven't told me your name yet, {config.user_title}. "
+        "Say \"remember my name is …\" and I'll never forget it."
+    )
 
 
 @skill(

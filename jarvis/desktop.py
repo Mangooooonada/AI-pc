@@ -281,8 +281,45 @@ Defender's exclusion list (Defender scans every file on boot otherwise).</div>
 </div></body></html>"""
 
 
+def _ensure_ollama_running() -> None:
+    """Ollama installed but not serving? Start it — quietly, best effort.
+
+    Without this, launching Jarvis on a fresh Windows boot lands on the
+    offline keyword brain until someone remembers to open Ollama.
+    """
+    try:
+        import shutil
+        import subprocess
+
+        if config.ollama_available():
+            return
+        exe = shutil.which("ollama")
+        if not exe and os.name == "nt":
+            candidate = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")
+            exe = candidate if os.path.exists(candidate) else None
+        if not exe:
+            return  # not installed — nothing to start
+        logger.info("ollama is installed but not running; starting it")
+        if os.name == "nt":
+            subprocess.Popen(
+                [exe, "app"],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0),
+            )
+        else:
+            subprocess.Popen(
+                [exe, "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+    except Exception as exc:
+        logger.warning("couldn't auto-start ollama: %s", exc)
+
+
 def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False) -> int:
     _init_logging()
+    _ensure_ollama_running()
 
     try:
         import webview  # type: ignore

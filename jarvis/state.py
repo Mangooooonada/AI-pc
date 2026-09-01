@@ -176,10 +176,20 @@ def add_memory(text: str, kind: str = "fact", source: str = "user") -> Dict[str,
         "created": _now(),
     }
     with _LOCK:
-        _STATE["memories"].append(mem)
-        # Keep the store bounded.
-        if len(_STATE["memories"]) > 2000:
-            _STATE["memories"] = _STATE["memories"][-2000:]
+        for old in _STATE["memories"]:
+            if old.get("text", "").strip().lower() == mem["text"].lower():
+                # Same fact told twice: refresh it in place instead of
+                # piling up duplicates.
+                old["created"] = mem["created"]
+                old["source"] = mem["source"]
+                old["kind"] = mem["kind"]
+                mem = old
+                break
+        else:
+            _STATE["memories"].append(mem)
+            # Keep the store bounded.
+            if len(_STATE["memories"]) > 2000:
+                _STATE["memories"] = _STATE["memories"][-2000:]
     save()
     return mem
 
