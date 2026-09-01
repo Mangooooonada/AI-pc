@@ -51,7 +51,12 @@ class Agent:
         self.history.clear()
 
     # -- main loop ---------------------------------------------------------
-    def ask(self, text: str, on_action: Optional[Callable[[str, str], None]] = None) -> Turn:
+    def ask(
+        self,
+        text: str,
+        on_action: Optional[Callable[[str, str], None]] = None,
+        on_token: Optional[Callable[[str], None]] = None,
+    ) -> Turn:
         text = (text or "").strip()
         if not text:
             return Turn(reply="", provider=self.provider_name)
@@ -67,7 +72,11 @@ class Agent:
         for _ in range(MAX_TOOL_ROUNDS):
             messages = [{"role": "system", "content": system_prompt()}] + self.history
             try:
-                result = self.provider.chat(messages, tools)
+                stream_fn = getattr(self.provider, "chat_stream", None)
+                if on_token and callable(stream_fn):
+                    result = stream_fn(messages, tools, on_token)
+                else:
+                    result = self.provider.chat(messages, tools)
             except ProviderError as exc:
                 error = str(exc)
                 degraded = True
@@ -78,7 +87,11 @@ class Agent:
                 from .providers import OfflineProvider
 
                 self.provider_errors = [error]
-                result = OfflineProvider().chat(messages, tools)
+                stand_in = OfflineProvider()
+                if on_token:
+                    result = stand_in.chat_stream(messages, tools, on_token)
+                else:
+                    result = stand_in.chat(messages, tools)
             except Exception as exc:  # network blips etc.
                 error = f"{type(exc).__name__}: {exc}"
                 return Turn(

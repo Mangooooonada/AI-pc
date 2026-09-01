@@ -75,6 +75,67 @@ class OpenAIProvider:
         ]
         return {"content": msg.get("content"), "tool_calls": calls}
 
+    def chat_stream(self, messages: List[Dict], tools: Optional[List[Dict]], on_token) -> Dict[str, Any]:
+        """SSE-streaming variant: on_token(text) fires as words arrive."""
+        import json
+        import requests
+
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        r = requests.post(
+            f"{self.base}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {config.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=90,
+            stream=True,
+        )
+        if r.status_code >= 400:
+            raise ProviderError(f"OpenAI error {r.status_code}: {r.text[:200]}")
+
+        content_parts: List[str] = []
+        tool_acc: Dict[int, Dict[str, Any]] = {}
+        for line in r.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except ValueError:
+                continue
+            delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+            if delta.get("content"):
+                content_parts.append(delta["content"])
+                on_token(delta["content"])
+            for tc in delta.get("tool_calls") or []:
+                idx = tc.get("index", 0)
+                slot = tool_acc.setdefault(idx, {"id": f"call_{idx}", "name": "", "args": ""})
+                if tc.get("id"):
+                    slot["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    slot["name"] += fn["name"]
+                if fn.get("arguments"):
+                    slot["args"] += fn["arguments"]
+
+        calls = [
+            {"id": s["id"], "name": s["name"], "arguments": _parse_args(s["args"])}
+            for _, s in sorted(tool_acc.items())
+            if s["name"]
+        ]
+        return {"content": "".join(content_parts) or None, "tool_calls": calls}
+
 
 class OllamaProvider:
     """Local models through Ollama — free, private, no API key."""
@@ -148,6 +209,66 @@ class OllamaProvider:
         ]
         return {"content": msg.get("content"), "tool_calls": calls}
 
+    def chat_stream(self, messages: List[Dict], tools: Optional[List[Dict]], on_token) -> Dict[str, Any]:
+        """NDJSON-streaming variant: on_token(text) fires as words arrive."""
+        import json
+        import requests
+
+        clean: List[Dict[str, Any]] = []
+        for m in messages:
+            c = {k: v for k, v in m.items() if k in {"role", "content", "tool_calls", "images"}}
+            if c.get("content") is None:
+                c["content"] = ""
+            clean.append(c)
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": clean,
+            "stream": True,
+            "keep_alive": config.ollama_keep_alive,
+            "options": {
+                "temperature": config.temperature,
+                "num_ctx": config.ollama_num_ctx,
+            },
+        }
+        if config.ollama_think in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+            payload["think"] = config.ollama_think in {"true", "1", "yes", "on"}
+        if tools:
+            payload["tools"] = tools
+        r = requests.post(f"{self.host}/api/chat", json=payload, timeout=180, stream=True)
+        if r.status_code == 404:
+            raise ProviderError(
+                f"Model '{self.model}' isn't installed. Run: ollama pull {self.model}"
+            )
+        if r.status_code >= 400:
+            raise ProviderError(f"Ollama error {r.status_code}: {r.text[:200]}")
+
+        content_parts: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        for line in r.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except ValueError:
+                continue
+            msg = chunk.get("message") or {}
+            if msg.get("content"):
+                content_parts.append(msg["content"])
+                on_token(msg["content"])
+            for i, c in enumerate(msg.get("tool_calls") or []):
+                # Ollama delivers tool calls complete (usually one chunk).
+                if c.get("function", {}).get("name"):
+                    tool_calls.append(
+                        {
+                            "id": c.get("id") or f"call_{len(tool_calls)}_{i}",
+                            "name": c["function"]["name"],
+                            "arguments": _parse_args(c["function"].get("arguments")),
+                        }
+                    )
+            if chunk.get("done"):
+                break
+        return {"content": "".join(content_parts) or None, "tool_calls": tool_calls}
+
 
 class OfflineProvider:
     """No model at all: keyword intent matching plus canned conversation.
@@ -207,6 +328,13 @@ class OfflineProvider:
             ),
             "tool_calls": [],
         }
+
+    def chat_stream(self, messages: List[Dict], tools: Optional[List[Dict]], on_token) -> Dict[str, Any]:
+        """Offline answers are instant anyway — emit them as one 'token'."""
+        result = self.chat(messages, tools)
+        if result.get("content"):
+            on_token(result["content"])
+        return result
 
 
 def get_provider(force: Optional[str] = None):

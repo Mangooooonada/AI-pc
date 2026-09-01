@@ -1,15 +1,18 @@
 """FastAPI backend for the Jarvis Command Center."""
 from __future__ import annotations
 
+import json
 import platform
+import queue
 import socket
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -87,6 +90,60 @@ def chat(body: ChatIn) -> Dict[str, Any]:
         "provider": turn.provider,
         "error": turn.error,
     }
+
+
+@app.post("/api/chat/stream")
+def chat_stream(body: ChatIn) -> StreamingResponse:
+    """Server-sent events: tokens as they're generated, then a final summary.
+
+    Event shapes (lines of `data: {...}`):
+      {"type":"action","skill":..., "arguments":..., "result":...}
+      {"type":"token","text":...}
+      {"type":"done","reply":..., "actions":[...], "provider":..., "error":...}
+      {"type":"error","error":...}
+    """
+    events: "queue.Queue" = queue.Queue()
+
+    def run() -> None:
+        try:
+            if body.provider and body.provider != agent.provider_name:
+                agent.reload_provider(body.provider)
+            turn = agent.ask(
+                body.message,
+                on_action=lambda skill, res: events.put(
+                    ("action", {"skill": skill, "arguments": {}, "result": res})
+                ),
+                on_token=lambda tok: events.put(("token", {"text": tok})),
+            )
+            state.log_turn(body.message, turn.reply, turn.actions, turn.provider)
+            events.put(
+                (
+                    "done",
+                    {
+                        "reply": turn.reply,
+                        "actions": turn.actions,
+                        "provider": turn.provider,
+                        "error": turn.error,
+                    },
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - report anything to the client
+            events.put(("error", {"error": f"{type(exc).__name__}: {exc}"}))
+
+    threading.Thread(target=run, daemon=True).start()
+
+    def stream():
+        while True:
+            kind, data = events.get()
+            yield f"data: {json.dumps({'type': kind, **data})}\n\n".encode()
+            if kind in {"done", "error"}:
+                break
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/skill")

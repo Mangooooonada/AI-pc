@@ -692,17 +692,80 @@ async function sendMessage(text, switchView = false) {
   $("#log").scrollTop = $("#log").scrollHeight;
   $("#sys-state").textContent = "PROCESSING";
   try {
-    const d = await post("/api/chat", { message: text });
+    // Fast path: stream the answer token-by-token.
+    const res = await streamChat(text, ghost);
     ghost.remove();
-    bubble("bot", d.reply || "(no reply)", d.actions || [], !!d.error);
-    say(d.reply);
+    bubble("bot", res.reply || "(no reply)", res.actions || [], !!res.error);
+    say(res.reply);
     refreshDash();
   } catch (e) {
-    ghost.remove();
-    bubble("bot", `Backend unreachable: ${e}`, [], true);
+    // Nothing ever streamed (old backend) — safe to retry once on the
+    // classic endpoint, since no work can have happened server-side yet.
+    try {
+      const d = await post("/api/chat", { message: text });
+      ghost.remove();
+      bubble("bot", d.reply || "(no reply)", d.actions || [], !!d.error);
+      say(d.reply);
+      refreshDash();
+    } catch (e2) {
+      ghost.remove();
+      bubble("bot", `Backend unreachable: ${e2}`, [], true);
+    }
   } finally {
     $("#sys-state").textContent = STATUS.provider === "offline" ? "LIMITED" : "OPTIMAL";
   }
+}
+
+async function streamChat(text, ghost) {
+  const resp = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: text }),
+  });
+  if (!resp.ok || !resp.body) throw new Error(`stream unavailable (${resp.status})`);
+
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", reply = "", actions = [], final = null, sawEvent = false;
+
+  const paint = () => {
+    ghost.innerHTML = `<span class="who">jarvis</span><div>${esc(reply)}</div>`;
+    $("#log").scrollTop = $("#log").scrollHeight;
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      const line = raw.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      sawEvent = true;
+      if (ev.type === "token") { reply += ev.text; paint(); }
+      else if (ev.type === "action") { actions.push(ev); }
+      else if (ev.type === "done") { final = ev; }
+      else if (ev.type === "error") {
+        // A crash after partial work — do NOT retry elsewhere (would double-run).
+        final = { reply: reply || `Something glitched mid-thought. (${ev.error})`, actions, error: ev.error };
+      }
+    }
+  }
+  if (final) {
+    return {
+      reply: final.reply || reply,
+      actions: (final.actions && final.actions.length ? final.actions : actions),
+      error: final.error || null,
+    };
+  }
+  if (sawEvent || reply) {
+    // Connection died mid-stream: keep what we have, never re-queue the work.
+    return { reply: reply || "My connection to the backend dropped mid-reply.", actions, error: "stream ended early" };
+  }
+  throw new Error("no stream events"); // → caller falls back to /api/chat
 }
 
 /* ─────────────────────────── voice ─────────────────────────── */

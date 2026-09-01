@@ -139,6 +139,24 @@ restarts.
 - **Thinking models** (qwen3 family): set `OLLAMA_THINK=false` if you want fast
   plain answers without visible reasoning time.
 
+### Making Jarvis feel faster
+
+Replies **stream in word-by-word** now (via `/api/chat/stream`), so answers start
+appearing immediately instead of after the whole response is done. With 32 GB of
+RAM you can also go further:
+
+- **Never unload the model:** set `OLLAMA_KEEP_ALIVE=-1` — with 32 GB there's no
+  reason to ever drop it from memory.
+- **More room for context:** set `OLLAMA_NUM_CTX=16384` (KV cache eats RAM; you
+  have plenty).
+- **Use a bigger model:** `ollama pull qwen3:14b` (~9 GB) runs comfortably in
+  32 GB and is a solid speed-vs-smarts balance.
+- **GPU off-load is the real speed king:** if your PC has an NVIDIA/AMD GPU,
+  Ollama uses it automatically. Verify with `ollama ps` — look for `100% GPU`.
+  CPU-only inference is the usual cause of slow replies.
+- **Ollama server flags** (set as system environment variables, not in `.env`):
+  `OLLAMA_FLASH_ATTENTION=true` speeds up long contexts on supported models.
+
 ### Option B — OpenAI (smartest, costs a few cents)
 
 **How to get an API key:**
