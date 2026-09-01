@@ -63,6 +63,15 @@ class Config:
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     ollama_host: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+    # Ollama ships models with a tiny 2k-4k context by default — far too small
+    # for the system prompt + tool schemas + conversation, so the prompt would
+    # be silently truncated. 8192 is a good floor; raise it if you have RAM.
+    ollama_num_ctx: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+    # Keep the model loaded in RAM/VRAM between chats (snappier replies).
+    ollama_keep_alive: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+    # Optional on/off for thinking-type models (e.g. qwen3): leave unset to
+    # let the model decide, set OLLAMA_THINK=false to force plain answers.
+    ollama_think: str = os.getenv("OLLAMA_THINK", "").strip().lower()
     temperature: float = float(os.getenv("JARVIS_TEMPERATURE", "0.4"))
     max_history: int = int(os.getenv("JARVIS_MAX_HISTORY", "20"))
 

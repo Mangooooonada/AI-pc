@@ -123,6 +123,22 @@ Open **Interface Studio** in the sidebar to restyle the command center live:
 Changes apply instantly and are saved in the app (`localStorage`), so they survive
 restarts.
 
+### Making Ollama smarter
+
+- **Bigger/better model = better brain.** In 2026 the sweet spots for tool-calling
+  assistants are `qwen3:8b` (~5 GB, golden mean), `qwen3:14b` (step up, ~9 GB),
+  and `llama3.1:8b` (fastest time-to-first-token). Big GPU (24 GB+)? Try
+  `qwen3:32b` or `qwen3-coder-next`. Then set `OLLAMA_MODEL=` to match.
+- **Context size matters.** Ollama defaults models to a 2k–4k-token context, which
+  silently chops Jarvis's prompt and tool list. Jarvis now sends `num_ctx` itself —
+  tune it with `OLLAMA_NUM_CTX` (default `8192`; raise to `16384`+ if you have the RAM).
+- **Keep it loaded.** `OLLAMA_KEEP_ALIVE=30m` (default) keeps the model in memory
+  between requests instead of reloading every chat.
+- **Deterministic tools.** Lower `JARVIS_TEMPERATURE` towards `0.2` for stricter,
+  more literal tool usage; raise it (≤0.8) for chattier, more creative replies.
+- **Thinking models** (qwen3 family): set `OLLAMA_THINK=false` if you want fast
+  plain answers without visible reasoning time.
+
 ### Option B — OpenAI (smartest, costs a few cents)
 
 **How to get an API key:**

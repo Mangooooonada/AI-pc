@@ -120,8 +120,14 @@ class OllamaProvider:
             "model": self.model,
             "messages": clean,
             "stream": False,
-            "options": {"temperature": config.temperature},
+            "keep_alive": config.ollama_keep_alive,
+            "options": {
+                "temperature": config.temperature,
+                "num_ctx": config.ollama_num_ctx,
+            },
         }
+        if config.ollama_think in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+            payload["think"] = config.ollama_think in {"true", "1", "yes", "on"}
         if tools:
             payload["tools"] = tools
         r = requests.post(f"{self.host}/api/chat", json=payload, timeout=180)
