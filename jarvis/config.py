@@ -164,6 +164,10 @@ class Config:
     # server to 0.0.0.0 on next launch and requires net_key from other devices.
     network: bool = _bool("JARVIS_NETWORK", False)
     net_key: str = os.getenv("JARVIS_NET_KEY", "")
+    # Remote-brain mode: use another running Jarvis server (a second PC, an
+    # Arena sandbox session, a home server) as this Jarvis's brain over HTTP.
+    remote_url: str = os.getenv("JARVIS_REMOTE_URL", "")
+    remote_key: str = os.getenv("JARVIS_REMOTE_KEY", "")
     workspace: Path = field(
         default_factory=lambda: Path(
             os.getenv("JARVIS_WORKSPACE", str(Path.home() / "JarvisFiles"))

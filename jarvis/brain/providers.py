@@ -424,6 +424,89 @@ class OllamaProvider:
         return {"content": "".join(content_parts) or None, "tool_calls": tool_calls}
 
 
+class RemoteJarvisProvider:
+    """Use another running Jarvis server as this Jarvis's brain, over HTTP.
+
+    Speaks our own protocol: GET /api/status for the handshake, then
+    POST /api/chat {"message": ...} per turn. Honours the pairing-key lock
+    (X-Jarvis-Key) from the network-sharing feature.
+
+    IMPORTANT: tool calls execute on *that* machine, on *its* files — this
+    is conversation-plus-remote-skills, not local PC control. For a remote
+    brain with LOCAL tool execution, use an OpenAI-compatible endpoint
+    instead (the 'openai' provider).
+    """
+
+    name = "remote"
+
+    def __init__(self) -> None:
+        url = (getattr(config, "remote_url", "") or "").strip()
+        if not url:
+            raise ProviderError(
+                "JARVIS_REMOTE_URL isn't set — point it at a running Jarvis server."
+            )
+        self.base = url.rstrip("/")
+        self.model = "remote jarvis"
+        self.note: Optional[str] = None
+        try:
+            import requests
+
+            r = requests.get(f"{self.base}/api/status", headers=self._headers(), timeout=5)
+        except Exception as exc:
+            raise ProviderError(
+                f"Remote brain unreachable at {self.base} ({type(exc).__name__}). Is that "
+                "server still running? Arena sandbox URLs die when their sandbox sleeps."
+            )
+        if r.status_code in {401, 403}:
+            raise ProviderError(
+                "The remote brain is locked — set JARVIS_REMOTE_KEY to its pairing key."
+            )
+        if r.status_code >= 400:
+            raise ProviderError(f"Remote brain answered {r.status_code} at {self.base}.")
+        try:
+            st = r.json()
+            self.model = f"{st.get('provider', '?')} @ {st.get('hostname', 'remote')}"
+            self.note = (
+                f"remote brain: {self.base} → {st.get('provider', '?')} "
+                f"({st.get('model', '?')})"
+            )
+        except Exception:
+            pass
+
+    def _headers(self) -> Dict[str, str]:
+        key = (getattr(config, "remote_key", "") or "").strip()
+        return {"X-Jarvis-Key": key} if key else {}
+
+    def chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        import requests
+
+        # The remote keeps its own conversation history — we forward the
+        # freshest user message each turn and let it carry the thread.
+        last = next(
+            ((m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+        r = requests.post(
+            f"{self.base}/api/chat",
+            json={"message": last},
+            headers=self._headers(),
+            timeout=180,
+        )
+        if r.status_code in {401, 403}:
+            raise ProviderError("Remote brain rejected the pairing key (401/403).")
+        if r.status_code >= 400:
+            raise ProviderError(f"Remote brain error {r.status_code}: {r.text[:200]}")
+        data = r.json()
+        return {"content": data.get("reply") or "", "tool_calls": []}
+
+    def chat_stream(self, messages, tools, on_token):
+        # Simplest contract: the remote answers whole; emit it as one chunk.
+        out = self.chat(messages, tools)
+        if out.get("content"):
+            on_token(out["content"])
+        return out
+
+
 class OfflineProvider:
     """No model at all: keyword intent matching plus canned conversation.
 
@@ -495,9 +578,14 @@ def get_provider(force: Optional[str] = None):
     """Build the best available provider, degrading gracefully."""
     choice = (force or config.resolved_provider()).lower()
     errors: List[str] = []
-    order = [choice] + [p for p in ("openai", "ollama", "offline") if p != choice]
+    order = [choice] + [p for p in ("remote", "openai", "ollama", "offline") if p != choice]
     for candidate in order:
         try:
+            if candidate == "remote":
+                provider = RemoteJarvisProvider()
+                if getattr(provider, "note", None):
+                    errors.append(provider.note)
+                return provider, errors
             if candidate == "openai":
                 return OpenAIProvider(), errors
             if candidate == "ollama":

@@ -265,6 +265,8 @@ async function loadSettings() {
      { JARVIS_PROVIDER: "openai", OPENAI_BASE_URL: "https://api.openai.com/v1", OPENAI_MODEL: "gpt-4o-mini" }],
     ["🏠 Ollama — local & 100% private", "uses your installed models",
      { JARVIS_PROVIDER: "ollama" }],
+    ["🛰 Remote Jarvis — a Jarvis running elsewhere", "its URL + pairing key below",
+     { JARVIS_PROVIDER: "remote" }],
   ];
   chunks.push(`<div class="st-group"><h3>BRAIN PRESETS</h3><div class="st-rows">
     ${presets.map((p, i) => `<button type="button" class="st-copy st-preset" data-preset="${i}">${p[0]}<span class="st-preset-sub">${p[1]}</span></button>`).join("")}

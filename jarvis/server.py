@@ -221,6 +221,8 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
         {"key": "OPENAI_BASE_URL", "attr": "openai_base_url", "label": "Cloud brain URL (OpenAI-compatible)", "kind": "text", "placeholder": "https://api.groq.com/openai/v1"},
         {"key": "OPENAI_MODEL", "attr": "openai_model", "label": "Cloud brain model", "kind": "text", "placeholder": "llama-3.3-70b-versatile"},
         {"key": "OPENAI_API_KEY", "attr": "openai_api_key", "label": "Cloud brain API key", "kind": "text", "placeholder": "gsk_… or sk-…"},
+        {"key": "JARVIS_REMOTE_URL", "attr": "remote_url", "label": "Remote Jarvis brain URL", "kind": "text", "placeholder": "https://… (another Jarvis server)"},
+        {"key": "JARVIS_REMOTE_KEY", "attr": "remote_key", "label": "Remote brain pairing key", "kind": "text", "placeholder": "from that machine's network sharing settings"},
     ]},
     {"section": "Resident Assistant", "blurb": "Always-on behaviours. Autostart, always-listen and spoken-reply toggles are in the App card above.", "fields": [
         {"key": "JARVIS_TRAY", "attr": "tray", "label": "Close button tucks Jarvis into the system tray", "kind": "bool"},
@@ -480,8 +482,8 @@ def update_settings(body: SettingsIn) -> Dict[str, Any]:
             return {"ok": False, "error": f"bad value for {key}"}
         if f["key"] == "JARVIS_PRIVACY" and str(value).lower() not in {"strict", "guarded", "relaxed"}:
             return {"ok": False, "error": "privacy mode must be strict, guarded or relaxed"}
-        if f["key"] == "JARVIS_PROVIDER" and str(value).lower() not in {"auto", "ollama", "openai", "offline"}:
-            return {"ok": False, "error": "provider must be auto, ollama, openai or offline"}
+        if f["key"] == "JARVIS_PROVIDER" and str(value).lower() not in {"auto", "ollama", "openai", "remote", "offline"}:
+            return {"ok": False, "error": "provider must be auto, ollama, openai, remote or offline"}
         setattr(config, f["attr"], value)
         applied[key] = str(value).lower() if isinstance(value, bool) else str(value)
 

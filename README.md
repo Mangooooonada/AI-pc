@@ -227,6 +227,15 @@ OPENAI_MODEL=llama-3.3-70b-versatile
 ```
 The same three settings work for OpenRouter, Together, DeepSeek and LM Studio.
 
+### Option D — Remote Jarvis (a brain at a URL)
+
+Point this Jarvis at *another running Jarvis server* (a second PC, a home
+server, a live Arena sandbox session): Settings ⚙ → **Remote Jarvis** preset,
+then set **Remote Jarvis brain URL** + **pairing key** (from that machine's
+network-sharing card). Conversation flows to it; its AI Core shows in the
+status note. Fair warning: its skills run on *that* machine, and sandbox URLs
+die with their sandbox — for a permanent cloud brain use the Groq preset.
+
 ### Option C — Offline (default, zero setup)
 
 A keyword engine maps plain phrases straight onto skills. No chat, but every command below works.
