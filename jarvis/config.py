@@ -10,6 +10,7 @@ import platform
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, List
 
 if getattr(sys, "frozen", False):
     # Packaged with PyInstaller: settings live next to JARVIS.exe.
@@ -39,6 +40,43 @@ def _load_dotenv() -> None:
 
 
 _load_dotenv()
+
+
+def env_file_path() -> Path:
+    return ROOT / ".env"
+
+
+def update_env_file(updates: Dict[str, str]) -> bool:
+    """Write KEY=value pairs into .env, replacing existing keys. Comment lines
+    are preserved. Returns True if the file was written."""
+    path = env_file_path()
+    try:
+        lines = (
+            path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        )
+    except OSError:
+        lines = []
+    done: set = set()
+    out: List[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                out.append(f"{key}={updates[key]}")
+                done.add(key)
+                continue
+        out.append(line)
+    if len(lines) and lines[-1].strip() and updates.keys() - done:
+        out.append("")  # visual gap before new keys
+    for key, value in updates.items():
+        if key not in done:
+            out.append(f"{key}={value}")
+    try:
+        path.write_text("\n".join(out) + "\n", encoding="utf-8")
+        return True
+    except OSError:
+        return False
 
 
 def _bool(name: str, default: bool) -> bool:

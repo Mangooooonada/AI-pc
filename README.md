@@ -238,7 +238,13 @@ present. Speech output uses `pyttsx3` and the voices already built into Windows
 
 ## Configuration
 
-Everything lives in `.env` (copy from `.env.example`):
+The ⚙ **Settings** page (top-right gear, or the sidebar) edits identity, voice,
+brain tuning, Ollama knobs and safety switches — changes are written to `.env`
+and applied live (changing `OLLAMA_MODEL` even reloads the brain in place). The
+read-out-loud toggle lives there too, next to everything theme-related in the
+**Interface Studio**.
+
+Everything else lives in `.env` (copy from `.env.example`):
 
 | Setting | Default | Meaning |
 |---|---|---|

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from . import agents as agents_mod
 from . import state
 from .brain import Agent
-from .config import config
+from .config import config, update_env_file
 from .skills import REGISTRY, run_skill
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -57,6 +57,10 @@ class ChatIn(BaseModel):
 class SkillIn(BaseModel):
     name: str
     arguments: Dict[str, Any] = {}
+
+
+class SettingsIn(BaseModel):
+    updates: Dict[str, Any]
 
 
 class SpeakIn(BaseModel):
@@ -167,6 +171,83 @@ def chat_stream(body: ChatIn) -> StreamingResponse:
 @app.post("/api/skill")
 def run_one(body: SkillIn) -> Dict[str, Any]:
     return {"result": run_skill(body.name, body.arguments)}
+
+
+# --------------------------------------------------------------- settings --
+# Field metadata driving the Settings page. Kinds: text, number, range, bool.
+SETTINGS_FIELDS: List[Dict[str, Any]] = [
+    {"section": "Assistant", "blurb": "Who Jarvis is, and what it calls you.", "fields": [
+        {"key": "JARVIS_NAME", "attr": "name", "label": "Assistant name", "kind": "text"},
+        {"key": "JARVIS_USER_TITLE", "attr": "user_title", "label": "How Jarvis addresses you", "kind": "text"},
+        {"key": "JARVIS_WAKE_WORD", "attr": "wake_word", "label": "Wake word", "kind": "text"},
+    ]},
+    {"section": "Voice", "blurb": "Spoken replies. The read-out-loud toggle lives here too.", "fields": [
+        {"key": "JARVIS_VOICE", "attr": "voice_enabled", "label": "Voice replies enabled", "kind": "bool"},
+        {"key": "JARVIS_TTS_RATE", "attr": "tts_rate", "label": "Speech rate", "kind": "range", "min": 120, "max": 260, "step": 1, "unit": " wpm"},
+        {"key": "JARVIS_TTS_VOICE", "attr": "tts_voice_hint", "label": "Voice match (e.g. david, zira)", "kind": "text"},
+    ]},
+    {"section": "Brain", "blurb": "Tuning for the local model. Applies immediately.", "fields": [
+        {"key": "JARVIS_TEMPERATURE", "attr": "temperature", "label": "Creativity (temperature)", "kind": "range", "min": 0, "max": 1.5, "step": 0.05},
+        {"key": "JARVIS_MAX_HISTORY", "attr": "max_history", "label": "Conversation memory depth", "kind": "range", "min": 4, "max": 60, "step": 2},
+        {"key": "OLLAMA_MODEL", "attr": "ollama_model", "label": "Ollama model", "kind": "text", "placeholder": "blank = auto-pick"},
+        {"key": "OLLAMA_NUM_CTX", "attr": "ollama_num_ctx", "label": "Ollama context size", "kind": "number", "min": 2048, "max": 131072, "step": 1024},
+        {"key": "OLLAMA_KEEP_ALIVE", "attr": "ollama_keep_alive", "label": "Keep model loaded", "kind": "text", "placeholder": "30m  (-1 = forever)"},
+    ]},
+    {"section": "Safety", "blurb": "What Jarvis is allowed to do without asking twice.", "fields": [
+        {"key": "JARVIS_ALLOW_POWER", "attr": "allow_power", "label": "Allow power commands (shutdown / restart / sleep)", "kind": "bool", "danger": True},
+        {"key": "JARVIS_ALLOW_SHELL", "attr": "allow_shell", "label": "Allow raw shell commands — dangerous", "kind": "bool", "danger": True},
+    ]},
+]
+
+_FIELD_BY_KEY = {f["key"]: f for s in SETTINGS_FIELDS for f in s["fields"]}
+
+
+@app.get("/api/settings")
+def get_settings() -> Dict[str, Any]:
+    sections = []
+    for s in SETTINGS_FIELDS:
+        fields = []
+        for f in s["fields"]:
+            fields.append({**f, "value": getattr(config, f["attr"])})
+        sections.append({"section": s["section"], "blurb": s["blurb"], "fields": fields})
+    return {"sections": sections}
+
+
+@app.post("/api/settings")
+def update_settings(body: SettingsIn) -> Dict[str, Any]:
+    applied: Dict[str, Any] = {}
+    for key, raw in body.updates.items():
+        f = _FIELD_BY_KEY.get(key)
+        if not f:
+            continue
+        try:
+            if f["kind"] == "bool":
+                value = bool(raw)
+            elif f["kind"] == "number":
+                value = int(raw)
+                value = max(f.get("min", value), min(f.get("max", value), value))
+            elif f["kind"] == "range":
+                value = float(raw)
+                value = max(f.get("min", value), min(f.get("max", value), value))
+            else:
+                value = str(raw).strip()
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"bad value for {key}"}
+        setattr(config, f["attr"], value)
+        applied[key] = str(value).lower() if isinstance(value, bool) else str(value)
+
+    env_ok = update_env_file(applied)
+
+    notes: List[str] = []
+    if any(k == "OLLAMA_MODEL" for k in applied):
+        try:
+            ag = get_agent()
+            if ag.provider_name == "ollama":
+                st = ag.reload_provider("ollama")
+                notes.append(f"brain reloaded on {st['model']}")
+        except Exception:
+            pass
+    return {"ok": True, "applied": list(applied), "persisted": env_ok, "notes": notes}
 
 
 @app.post("/api/speak")

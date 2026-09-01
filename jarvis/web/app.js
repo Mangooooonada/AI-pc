@@ -206,6 +206,75 @@ function buildStudio() {
   }));
 }
 
+/* ─────────────────────────── settings ─────────────────────────── */
+async function loadSettings() {
+  const d = await api("/api/settings");
+  const root = $("#settings-groups");
+  if (!root || !d.sections) return;
+  const flat = {};
+  const chunks = [];
+
+  // App-side setting that only lives in the browser: read replies aloud.
+  const speakOn = localStorage.getItem("jarvis.speak") !== "off";
+  chunks.push(`<div class="st-group"><h3>App</h3><div class="st-rows">
+    <label class="st-ctl"><span>Read Jarvis's replies aloud (browser voice)</span>
+      <button type="button" class="st-toggle ${speakOn ? "on" : ""}" id="set-speak"></button></label>
+  </div><p class="st-note" style="margin-top:8px">Theme, colours, glow and layout live in the <b>Interface Studio</b> (top right button).</p></div>`);
+
+  for (const sec of d.sections) {
+    const rows = sec.fields.map((f) => {
+      flat[f.key] = f;
+      if (f.kind === "bool")
+        return `<label class="st-ctl ${f.danger ? "danger" : ""}"><span>${esc(f.label)}</span>
+          <button type="button" class="st-toggle ${f.value ? "on" : ""}" data-set="${f.key}"></button></label>`;
+      if (f.kind === "range")
+        return `<label class="st-ctl"><span>${esc(f.label)}</span><b data-lab="${f.key}">${f.value}${f.unit || ""}</b>
+          <input type="range" data-set="${f.key}" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.value}"></label>`;
+      const kind = f.kind === "number" ? "number" : "text";
+      const bounds = f.kind === "number" ? ` min="${f.min}" max="${f.max}" step="${f.step}"` : "";
+      return `<label class="st-ctl"><span>${esc(f.label)}</span>
+        <input class="st-input" type="${kind}" data-set="${f.key}" value="${esc(String(f.value))}"${bounds} placeholder="${esc(f.placeholder || "")}"></label>`;
+    }).join("");
+    chunks.push(`<div class="st-group"><h3>${esc(sec.section.toUpperCase())}</h3>
+      <div class="st-rows">${rows}</div>
+      <p class="st-note" style="margin-top:8px">${esc(sec.blurb)}</p></div>`);
+  }
+  root.innerHTML = chunks.join("");
+
+  $("#set-speak").onclick = (e) => {
+    SPEAK_BACK = !SPEAK_BACK;
+    localStorage.setItem("jarvis.speak", SPEAK_BACK ? "on" : "off");
+    e.currentTarget.classList.toggle("on", SPEAK_BACK);
+    if (!SPEAK_BACK) window.speechSynthesis?.cancel();
+    toast(SPEAK_BACK ? "Spoken replies on." : "Spoken replies muted.");
+  };
+
+  const save = async (key, value) => {
+    const f = flat[key];
+    const r = await post("/api/settings", { updates: { [key]: value } });
+    if (r.ok) {
+      toast(`${f?.label || key} saved.` + (r.notes?.length ? " " + r.notes.join(" ") : ""));
+      if (key.startsWith("OLLAMA")) loadStatus();
+    } else {
+      toast(`Couldn't save ${f?.label || key}: ${r.error || "unknown error"}`, "err");
+    }
+  };
+
+  root.querySelectorAll(".st-toggle[data-set]").forEach((el) => (el.onclick = () => {
+    el.classList.toggle("on");
+    save(el.dataset.set, el.classList.contains("on"));
+  }));
+  root.querySelectorAll("input[data-set]").forEach((el) => {
+    const key = el.dataset.set, f = flat[key];
+    const liveLabel = () => {
+      const lab = root.querySelector(`[data-lab="${key}"]`);
+      if (lab && f) lab.textContent = el.value + (f.unit || "");
+    };
+    if (el.type === "range") { el.oninput = liveLabel; el.onchange = () => save(key, el.value); }
+    else el.onchange = () => save(key, el.value);
+  });
+}
+
 /* ─────────────────────────── navigation ─────────────────────────── */
 const NAV = [
   ["command", "Command Center", "grid"],
@@ -219,6 +288,7 @@ const NAV = [
   ["tools", "Tools & Skills", "tools"],
   ["workflows", "Workflows", "flow"],
   ["studio", "Interface Studio", "palette"],
+  ["settings", "Settings", "system"],
 ];
 
 function buildNav() {
@@ -234,7 +304,8 @@ function go(view) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.dataset.view === view));
   const loader = { tasks: loadTasks, calendar: loadTasks, memory: loadMemory,
     conversations: loadConversations, tools: loadSkills, workflows: loadWorkflows,
-    agents: loadAgents, aicore: loadLLMs, knowledge: renderKB, studio: buildStudio }[view];
+    agents: loadAgents, aicore: loadLLMs, knowledge: renderKB, studio: buildStudio,
+    settings: loadSettings }[view];
   if (loader) loader();
   if (view === "aicore") setTimeout(() => $("#input").focus(), 60);
 }
@@ -837,8 +908,10 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
 /* ─────────────────────────── boot ─────────────────────────── */
 (async function boot() {
   initTheme();   // before any canvas work so drawings pick up themed colours
+  SPEAK_BACK = localStorage.getItem("jarvis.speak") !== "off";
   buildNav();
   buildStudio();
+  loadSettings();
   initGlobe();
   waveform($("#voice-wave"), { bars: 30, idle: 0.22 });
   waveform($("#talk-wave-l"), { bars: 16, idle: 0.3 });
@@ -854,7 +927,8 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
   $("#talk-bar").onclick = toggleMic;
   $("#btn-grid").onclick = () => go("command");
   $("#btn-bell").onclick = () => { go("command"); loadFeed(); };
-  $("#btn-settings").onclick = () => go("aicore");
+  $("#btn-settings").onclick = () => go("settings");
+  $("#settings-studio").onclick = () => go("studio");
   $("#brief-btn").onclick = () => sendMessage("executive briefing", true);
   $("#btn-reset").onclick = async () => { await post("/api/reset"); $("#log").innerHTML = ""; bubble("bot", "Context cleared."); };
   $("#btn-clear-convos").onclick = async () => { await fetch("/api/conversations", { method: "DELETE" }); loadConversations(); };

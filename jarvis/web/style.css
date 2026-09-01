@@ -479,6 +479,13 @@ select:hover,.btn-ghost:hover{border-color:var(--cy);color:var(--cy)}
 .st-toggle.on::after{left:20px;background:var(--cy);box-shadow:0 0 8px rgba(var(--cy-rgb),calc(.8*var(--glow)))}
 .st-note{font-size:10.5px;color:var(--dim);line-height:1.6;padding:0 2px}
 .st-note code{color:var(--cy-dim);background:rgba(var(--cy-rgb),.08);padding:0 5px;border-radius:4px;font-size:10px}
+.st-note b{color:var(--muted)}
+.st-input{background:rgba(3,14,24,.85);border:1px solid var(--line);border-radius:7px;
+  padding:6px 9px;font-size:11.5px;color:var(--txt);outline:none;min-width:130px;flex:none;transition:.2s}
+.st-input:focus{border-color:var(--cy);box-shadow:0 0 12px rgba(var(--cy-rgb),calc(.18*var(--glow)))}
+.st-ctl.danger span{color:var(--hot)}
+.st-ctl.danger .st-toggle.on{border-color:var(--hot);background:rgba(255,95,126,.15)}
+.st-ctl.danger .st-toggle.on::after{background:var(--hot);box-shadow:0 0 8px rgba(255,95,126,.6)}
 
 /* FX visibility switches driven by body classes */
 body.no-scan .scanlines{display:none}
