@@ -39,7 +39,11 @@ class Agent:
             "model": getattr(self.provider, "model", "keyword engine"),
             "skills": len(REGISTRY),
             "platform": config.platform_name,
-            "notes": self.provider_errors,
+            "notes": (
+                [n for n in self.provider_errors if n]
+                + (([pnote] if (pnote := getattr(self.provider, "note", None))
+                    and pnote not in self.provider_errors else []))
+            ),
             "assistant": config.name,
         }
 

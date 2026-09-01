@@ -280,6 +280,25 @@ class OllamaProvider:
                 payload["think"] = False
         return payload
 
+    def _families(self, name: str) -> str:
+        """'qwen3:8b' -> 'qwen3' (same family = same template = same bugs)."""
+        return name.split(":")[0]
+
+    def _repick_model(self, avoid: str) -> str:
+        """Pick the best installed model that ISN'T the one choking — ideally
+        from a different family, since parser bugs run in families."""
+        try:
+            installed = [m for m in config.ollama_models()
+                         if self._families(m) != self._families(avoid)]
+        except Exception:
+            installed = []
+        if not installed:
+            try:
+                installed = [m for m in config.ollama_models() if m != avoid]
+            except Exception:
+                return ""
+        return self._best_installed(installed) if installed else ""
+
     def _post_chat(self, payload: Dict[str, Any]):
         import requests
 
@@ -299,9 +318,11 @@ class OllamaProvider:
                 payload = {k: v for k, v in payload.items() if k != "tools"}
                 r = requests.post(url, json=payload, timeout=180, stream=stream)
             elif any(s in low for s in self._TOOL_PARSE_SIGNS):
-                # The model fumbled one tool call. Retry that turn letting it
-                # answer directly, instead of turning a bad generation into a
-                # chat-stopping error. (No tools → no parser → no 400.)
+                # Heal ladder for a botched tool call — each rung is safer:
+                #  1) same model, no tools, plain-text nudge
+                #  2) clean room: drop the whole history (it can trip the
+                #     parser), keep only system + the last user message
+                #  3) a completely different installed model
                 log.warning(
                     "ollama: malformed tool call from '%s'; retrying without tools",
                     self.model,
@@ -311,6 +332,36 @@ class OllamaProvider:
                     {"role": "system", "content": self._NO_TOOLS_NUDGE}
                 ]
                 r = requests.post(url, json=payload, timeout=180, stream=stream)
+                if r.status_code == 400 and any(
+                    s in r.text.lower() for s in self._TOOL_PARSE_SIGNS
+                ):
+                    log.warning("ollama: still choking — clean-room retry (no history)")
+                    keep = [m for m in payload["messages"] if m.get("role") == "system"][:1]
+                    keep += [m for m in payload["messages"] if m.get("role") == "user"][-1:]
+                    keep.append({"role": "system", "content": self._NO_TOOLS_NUDGE})
+                    clean = {k: v for k, v in payload.items() if k not in {"tools", "messages"}}
+                    clean["messages"] = keep
+                    r = requests.post(url, json=clean, timeout=180, stream=stream)
+                if r.status_code == 400 and any(
+                    s in r.text.lower() for s in self._TOOL_PARSE_SIGNS
+                ):
+                    alt = self._repick_model(self.model)
+                    if alt:
+                        log.error(
+                            "ollama: '%s' cannot be coaxed into behaving — "
+                            "switching this session to '%s'", self.model, alt,
+                        )
+                        old = self.model
+                        self.model, self._big_ok = alt, None
+                        self.note = (
+                            f"'{old}' kept mangling tool calls; using '{alt}' "
+                            f"for the rest of this session. Pin it with OLLAMA_MODEL={alt} in .env."
+                        )
+                        heal = {k: v for k, v in payload.items() if k != "tools"}
+                        heal["model"] = alt
+                        r = requests.post(url, json=heal, timeout=180, stream=stream)
+                        if r.status_code >= 400:
+                            self.model = old  # didn't help either — restore
         if r.status_code == 404:
             raise ProviderError(
                 f"Model '{self.model}' isn't installed. Run: ollama pull {self.model}"
@@ -318,10 +369,10 @@ class OllamaProvider:
         if r.status_code >= 400:
             if any(s in r.text.lower() for s in self._TOOL_PARSE_SIGNS):
                 raise ProviderError(
-                    f"'{self.model}' keeps emitting malformed tool calls and Ollama "
-                    "rejects the replies (HTTP 400). Skills are unavailable this turn — "
-                    "try again, switch models in Settings (llama3.1:8b / qwen3:8b handle "
-                    "skills most reliably), or raise the Ollama context size there."
+                    f"'{self.model}' is choking on its own tool calls (Ollama HTTP 400) "
+                    "even with skills and history fully stripped. Try again, switch "
+                    "models in Settings (llama3.1:8b is the most reliable skill model), "
+                    "or update Ollama — newer releases ship fixed tool templates."
                 )
             raise ProviderError(f"Ollama error {r.status_code}: {r.text[:200]}")
         return r
