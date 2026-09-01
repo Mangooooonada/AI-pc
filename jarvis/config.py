@@ -169,6 +169,8 @@ class Config:
     # Arena sandbox session, a home server) as this Jarvis's brain over HTTP.
     remote_url: str = os.getenv("JARVIS_REMOTE_URL", "")
     remote_key: str = os.getenv("JARVIS_REMOTE_KEY", "")
+    # Google scaffolding: OAuth Desktop client JSON (calendar/gmail skills).
+    google_creds: str = os.getenv("JARVIS_GOOGLE_CREDENTIALS", "")
     workspace: Path = field(
         default_factory=lambda: Path(
             os.getenv("JARVIS_WORKSPACE", str(Path.home() / "JarvisFiles"))
@@ -184,6 +186,22 @@ class Config:
     @property
     def is_windows(self) -> bool:
         return platform.system() == "Windows"
+
+    def credentials_path(self):
+        """Locate the Google OAuth Desktop credentials.json, or None."""
+        candidates = []
+        if self.google_creds:
+            candidates.append(Path(self.google_creds))
+        repo_root = Path(__file__).resolve().parent.parent
+        candidates += [repo_root / "credentials.json",
+                       self.workspace / "credentials.json"]
+        for c in candidates:
+            try:
+                if c.is_file():
+                    return c
+            except Exception:
+                continue
+        return None
 
     @property
     def platform_name(self) -> str:

@@ -14,3 +14,7 @@ JarvisFiles/
 dist/
 build/
 *.manifest
+
+# Google OAuth secrets — never commit
+credentials.json
+google_token.json
