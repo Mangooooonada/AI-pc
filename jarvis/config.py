@@ -104,13 +104,30 @@ class Config:
         return "offline"
 
     def ollama_available(self) -> bool:
+        """Is the Ollama server reachable? (Does not check the model.)"""
         try:
             import requests
 
-            r = requests.get(f"{self.ollama_host}/api/tags", timeout=1.5)
+            r = requests.get(f"{self.ollama_host}/api/tags", timeout=3)
             return r.status_code == 200
         except Exception:
             return False
+
+    def ollama_models(self) -> list:
+        """Names of the models installed in Ollama ([] if unreachable)."""
+        try:
+            import requests
+
+            r = requests.get(f"{self.ollama_host}/api/tags", timeout=3)
+            if r.status_code != 200:
+                return []
+            return [
+                m["name"]
+                for m in r.json().get("models", [])
+                if isinstance(m, dict) and m.get("name")
+            ]
+        except Exception:
+            return []
 
 
 config = Config()

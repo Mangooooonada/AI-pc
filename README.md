@@ -283,7 +283,8 @@ jarvis/
 | App window is blank/white | Install the **[WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)** (already present on Windows 11) |
 | **App opens the website in your browser instead of a window** | The native window failed (usually a missing/broken WebView2 Runtime). Re-run `setup.bat` — it auto-repairs WebView2 — or install the runtime manually. Jarvis now shows a pop-up explaining the reason and logs details to `jarvis-launcher.log` |
 | Window won't open at all | Jarvis falls back to your browser (with an explanation pop-up); `pip install pywebview pythonnet` to fix |
-| Brain says `offline` unexpectedly | No key and no Ollama running. Start Ollama or check `.env` |
+| Brain says `offline` unexpectedly | No key and no Ollama running. Start Ollama or check `.env` (a one-off Ollama error no longer sticks — the next message retries it automatically). Look at the **AI Core notes** for the exact reason |
+| Ollama is running but Jarvis stays `offline` | The configured model likely isn't pulled. Jarvis now tells you in AI Core notes exactly what to run, e.g. `ollama pull llama3.2`, or that your `.env` `OLLAMA_MODEL` doesn't match an installed model |
 | `Model 'x' isn't installed` | `ollama pull llama3.2` |
 | Volume control imprecise | `pip install pycaw comtypes` |
 | Mic does nothing | Allow microphone access when prompted; WebView2 must be up to date |

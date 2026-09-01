@@ -62,6 +62,7 @@ class Agent:
         actions: List[Dict[str, Any]] = []
         tools = tool_schemas()
         error: Optional[str] = None
+        degraded = False  # real brain failed this turn → offline stand-in
 
         for _ in range(MAX_TOOL_ROUNDS):
             messages = [{"role": "system", "content": system_prompt()}] + self.history
@@ -69,12 +70,15 @@ class Agent:
                 result = self.provider.chat(messages, tools)
             except ProviderError as exc:
                 error = str(exc)
-                # Fall back to the offline brain rather than dying.
+                degraded = True
+                # Stand in with the offline brain for THIS turn only, keeping
+                # the configured provider so the next message retries it —
+                # a single Ollama hiccup must not downgrade the whole
+                # session (previously this swapped self.provider for good).
                 from .providers import OfflineProvider
 
-                self.provider = OfflineProvider()
                 self.provider_errors = [error]
-                result = self.provider.chat(messages, tools)
+                result = OfflineProvider().chat(messages, tools)
             except Exception as exc:  # network blips etc.
                 error = f"{type(exc).__name__}: {exc}"
                 return Turn(
@@ -132,7 +136,9 @@ class Agent:
                 )
 
             # The offline brain can't summarise tool output, so return it directly.
-            if self.provider_name == "offline":
+            # (Also applies when a real brain failed and offline stood in this
+            # turn — otherwise the loop would keep re-firing the same intent.)
+            if self.provider_name == "offline" or degraded:
                 reply = "\n".join(a["result"] for a in actions[-len(calls):])
                 self.history.append({"role": "assistant", "content": reply})
                 self._trim()

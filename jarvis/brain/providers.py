@@ -88,6 +88,23 @@ class OllamaProvider:
             raise ProviderError(
                 f"Ollama isn't reachable at {self.host}. Start it with 'ollama serve'."
             )
+        # The server being up isn't enough — if the configured model was
+        # never pulled, every chat call 404s and Jarvis "falls back to
+        # offline". Check it now so the user gets the exact fix.
+        installed = config.ollama_models()
+        if installed and not self._model_installed(installed):
+            names = ", ".join(installed)
+            raise ProviderError(
+                f"Model '{self.model}' isn't installed. Run: ollama pull {self.model}  "
+                f"(installed: {names} — or set OLLAMA_MODEL={installed[0]} in .env)"
+            )
+
+    def _model_installed(self, installed: List[str]) -> bool:
+        want = self.model
+        return any(
+            m == want or m == f"{want}:latest" or m.split(":")[0] == want
+            for m in installed
+        )
 
     def chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
         import requests
