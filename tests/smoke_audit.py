@@ -145,6 +145,84 @@ def main() -> int:
 
     check("settings reject unknown keys loudly", _settings)
 
+    def _stream_refusal_nudge():
+        """Refusal interceptor must work on the SSE transport too."""
+        from jarvis.brain.agent import Agent
+
+        class StreamRefuser:
+            name = "ollama"; last_turn_label = None
+            n = 0
+
+            def chat_stream(self, messages, tools, on_token, **kw):
+                self.n += 1
+                if self.n == 1:
+                    if on_token:
+                        on_token("I'm afraid I can't")
+                    return {"content": "I'm afraid I can't do that, Sir.", "tool_calls": []}
+                return {"content": "Now done, Sir.", "tool_calls": []}
+
+        ag = Agent("offline"); sr = StreamRefuser(); ag.provider = sr
+        t = ag.ask("mute everything", on_token=lambda x: None)
+        assert t.reply == "Now done, Sir." and sr.n == 2
+        assert not any("you HAVE the ability" in (m.get("content") or "") for m in ag.history)
+
+    check("SSE-path refusal nudge fires once", _stream_refusal_nudge)
+
+    def _model_heal_persists():
+        """404 model_not_found on the STREAM path must heal and rewrite .env."""
+        from jarvis.config import config
+        from jarvis.brain import providers as P
+        import requests, types
+
+        config.openai_api_key = "gsk-x"
+        config.openai_base_url = "https://api.groq.com/openai/v1"
+        config.openai_model = "llama-dead-name"
+
+        class FakeResp:
+            def __init__(self, code, payload=None, text=""):
+                self.status_code, self._payload, self.text = code, payload or {}, text
+
+            def json(self): return self._payload
+
+            def iter_lines(self, decode_unicode=True):
+                yield 'data: {"choices":[{"delta":{"content":"healed"}}]}'
+                yield 'data: [DONE]'
+
+        real_post, real_get = requests.post, requests.get
+        requests.post = lambda url, json=None, **k: (
+            FakeResp(404, text='{"error":{"code":"model_not_found"}}')
+            if json.get("model") == "llama-dead-name" else FakeResp(200, {}))
+        requests.get = lambda url, **k: FakeResp(200, {"data": [{"id": "llama-live"}]})
+        try:
+            o = P.OpenAIProvider()
+            out = o.chat_stream([{"role": "user", "content": "x"}], None, lambda s: None)
+            assert out["content"] == "healed" and o.model == "llama-live"
+            from pathlib import Path as _Path
+            assert "OPENAI_MODEL=llama-live" in (_Path(".env").read_text() if _Path(".env").exists() else "")
+        finally:
+            requests.post, requests.get = real_post, real_get
+            _p = _Path(".env")
+            if _p.exists():
+                _p.unlink()
+
+    check("dead cloud model self-heals + persists on stream path", _model_heal_persists)
+
+    def _restart_memory():
+        state.log_turn("probe-question-42", "probe-answer-84", [], "ollama")
+        from jarvis.brain.agent import Agent
+
+        class Stub:
+            name = "ollama"; last_turn_label = None
+
+            def chat(self, m, tools=None, **kw):
+                return {"content": "ok", "tool_calls": []}
+
+        ag = Agent("offline"); ag.provider = Stub()
+        flat = " ".join((x.get("content") or "") for x in ag.history)
+        assert "probe-question-42" in flat and "probe-answer-84" in flat
+
+    check("restart restores chat memory", _restart_memory)
+
     def _failover():
         from jarvis.brain.agent import Agent, ProviderError
         from jarvis.brain import providers as P
