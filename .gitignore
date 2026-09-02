@@ -18,3 +18,8 @@ build/
 # Google OAuth secrets — never commit
 credentials.json
 google_token.json
+
+# fine-tune artifacts (huge + personal)
+*.gguf
+training/*.jsonl
+training/jarvis-me*/

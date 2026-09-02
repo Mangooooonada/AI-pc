@@ -194,4 +194,4 @@ def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
 
 
 # Importing the modules below populates REGISTRY.
-from . import system, apps, media, files, web, knowledge, agenda, security, vision, dev, docs, google  # noqa: E402,F401
+from . import system, apps, media, files, web, knowledge, agenda, security, vision, dev, docs, google, train  # noqa: E402,F401

@@ -254,6 +254,14 @@ def recent_turns(limit: int = 80) -> List[Dict[str, str]]:
     return pairs[-limit:]
 
 
+def recent_entries(limit: int = 500) -> List[Dict[str, Any]]:
+    """Chronological FULL entries (with provider) — training-data export."""
+    with _LOCK:
+        convos = list(_STATE["conversations"])
+    return [c for c in convos
+            if (c.get("user") or "").strip() and (c.get("reply") or "").strip()][-limit:]
+
+
 def clear_conversations() -> None:
     with _LOCK:
         _STATE["conversations"] = []

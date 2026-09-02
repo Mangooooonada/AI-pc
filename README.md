@@ -214,6 +214,16 @@ choose **Add to Home Screen** for a full-screen Jarvis with its own icon.
 And barge-in works both ways: while Jarvis is speaking, say the wake word
 and he stops talking and starts listening. No more waiting out a monologue.
 
+### Raise your own model on you (fine-tuning kit)
+
+When you've logged a few hundred good turns, say **"export my training
+data"** — Jarvis writes a privacy-scrubbed ChatML dataset
+(`<workspace>/training/jarvis-chatml.jsonl`: canned offline answers and error
+turns skipped, API keys/passwords redacted). Then `training/README.md` walks
+the two upgrade paths — **your GPU** (16 GB+) or a **~$5 rented one** — and
+imports the result into Ollama as `jarvis-me`, a second brain you can switch
+to from the dropdown while the stock model stays untouched.
+
 ### Ask your documents (no cloud, no embeddings)
 
 Drop text-files-by-other-names (md, txt, json, code, logs, csv…) into
