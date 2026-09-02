@@ -96,6 +96,13 @@ class Agent:
     ) -> Turn:
         with self._busy:
             turn = self._ask_unlocked(text, on_action, on_token)
+        # Auto-memory visibility: when facts were banked this turn, stamp the
+        # reply so "did you save it?" never gets a shrug again.
+        saved_facts = getattr(self, "_last_automem", None)
+        if saved_facts and turn.reply and "Memorized new" not in turn.reply:
+            stamp = "\n\n📌 Memorized: " + " | ".join(saved_facts)
+            if len(turn.reply) + len(stamp) < 1800:
+                turn.reply += stamp
         try:  # usage stats: which brain actually answered
             from .. import state as _st
             label = (turn.provider or "").lower()
@@ -134,9 +141,13 @@ class Agent:
 
         self.history.append({"role": "user", "content": text})
         self._trim()
+        self._last_automem: List[str] = []
         try:
             from .automem import maybe_autoremember
-            maybe_autoremember(text)
+            self._last_automem = maybe_autoremember(text)
+            if self._last_automem:
+                from .. import state as _st2
+                _st2.add_notification("📌 " + " | ".join(self._last_automem))
         except Exception:
             pass  # auto-memory must never break a conversation
 

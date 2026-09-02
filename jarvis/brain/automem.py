@@ -29,7 +29,35 @@ _PATTERNS = [
      "The user's email is {0}."),
     (re.compile(r"\bmy (?:birthday|b-day) is\s+([^.!;\n]{2,30})", re.I),
      "The user's birthday is {0}."),
+    # ---- v2: the facts people ACTUALLY state out loud ----
+    (re.compile(r"\b(?:i am|i'm|i just turned)\s+(\d{1,3})(?!\s*(?:%|percent|minutes?|"
+                r"mins?|seconds?|kg|lbs?|dollars?|usd|miles?|km))(?:\s*years?\s*old)?\b", re.I),
+     "The user is {0} years old."),
+    (re.compile(r"\bcall me\s+([A-Za-z][\w'’-]{1,20})", re.I),
+     "The user likes to be called {0}."),
+    (re.compile(r"\bi have a\s+(dog|cat|puppy|kitten|bird|parrot|hamster|rabbit|snake|fish)"
+                r"(?:\s+(?:named|called)\s+([A-Za-z][\w'’-]{1,20}))?", re.I),
+     "The user has a {0}{PETNAME}."),
+    (re.compile(r"\bmy (?:dog|cat|puppy|kitten|bird|parrot|hamster|rabbit|snake|fish|pet)"
+                r"(?:'s name is| is named| is called| is)\s+([A-Za-z][\w'’-]{1,20})\b", re.I),
+     "The user's pet is named {0}."),
+    (re.compile(r"\bmy (wife|husband|partner|son|daughter|mother|father|mom|dad|brother|"
+                r"sister|girlfriend|boyfriend|boss|best friend)(?:'s name)? is\s+"
+                r"([A-Za-z][\w'’ .-]{0,28})\b", re.I),
+     "The user's {0} is {1}."),
+    (re.compile(r"\bi work as\s+([\w][\w -]{1,38})\b", re.I),
+     "The user works as {0}."),
+    (re.compile(r"\bmy (?:car|truck|bike|ride) is (?:a )?([^.!;\n]{2,45})\b", re.I),
+     "The user's vehicle is {0}."),
+    (re.compile(r"\bmy phone number is\s+([+()\d\s.-]{7,20})", re.I),
+     "The user's phone number is {0}."),
 ]
+
+# trailing command form: "<statement>, remember that ok?" → bank the statement
+_REMEMBER_THAT = re.compile(
+    r"^(?P<stmt>.{4,180}?)[.!?,]*\s*(?:please\s+)?remember\s+(?:that|this|it)"
+    r"\s*(?:ok(?:ay)?)?\s*[.!?]*$", re.I | re.S)
+
 
 
 def maybe_autoremember(text: str) -> List[str]:
@@ -55,7 +83,13 @@ def maybe_autoremember(text: str) -> List[str]:
             m = rx.search(body)
             if not m:
                 continue
-            fact = tpl.format(*[g.strip().strip(" .") for g in m.groups()])
+            groups = [g.strip().strip(" .") for g in m.groups() if g]
+            if "{PETNAME}" in tpl:
+                tpl_ = tpl.replace("{PETNAME}", f" named {groups[-1]}" if len(groups) > 1 else "")
+                groups = groups[:1]
+            else:
+                tpl_ = tpl
+            fact = tpl_.format(*groups)
             key = fact.lower().rstrip(".")
             # collapse near-duplicates as well as exact ones
             if key in known or any(k in key or key in k for k in known):
@@ -63,6 +97,15 @@ def maybe_autoremember(text: str) -> List[str]:
             state.add_memory(fact, kind="fact", source="auto")
             known.add(key)
             saved.append(fact)
+        if not saved:
+            m = _REMEMBER_THAT.match(body)
+            if m:
+                stmt = m.group("stmt").strip(" .!?,")
+                fact = f"Note from the user: {stmt.rstrip('.')}."
+                key = fact.lower().rstrip(".")
+                if key not in known and not any(k in key or key in k for k in known):
+                    state.add_memory(fact, kind="fact", source="auto")
+                    saved.append(fact)
         return saved
     except Exception:
         return []

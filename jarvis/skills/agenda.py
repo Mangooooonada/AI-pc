@@ -185,6 +185,10 @@ def remember(text: str, kind: str = "fact") -> str:
         "what do you remember about {query}", "recall {query}",
         "what do you know about me", "what do you know about {query}",
         "what is my {query}", "who is my {query}", "do you remember my {query}",
+        "did you save it", "did you save it to memory", "did you save that",
+        "what did you just save", "what did you just remember",
+        "what do you have saved", "what is in your memory", "what's in memory",
+        "do you save stuff to memory", "can you auto save stuff to memory",
     ],
 )
 def recall(query: str = "") -> str:
