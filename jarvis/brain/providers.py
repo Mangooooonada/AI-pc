@@ -37,6 +37,39 @@ class ProviderError(RuntimeError):
 _POISONED: set = set()  # provider names that AUTH-FAILED this session
 
 
+def _cred_fp(name: str) -> str:
+    """Fingerprint the credential a provider WOULD use right now, so a past
+    rejection sticks to THAT key (restart-proof) without storing the key."""
+    import hashlib
+    if name == "openai":
+        cred = (config.openai_api_key or "") + "|" + (config.openai_base_url or "")
+    elif name == "remote":
+        cred = (config.remote_url or "") + "|" + (config.remote_key or "")
+    else:
+        cred = name
+    return hashlib.sha1(cred.encode()).hexdigest()[:16]
+
+
+def _permanent_poison_active(name: str) -> bool:
+    try:
+        from .. import state
+        dead = state._STATE.get("dead_credentials", {})
+        return dead.get(name) == _cred_fp(name)
+    except Exception:
+        return False
+
+
+def _mark_dead_credential(name: str) -> None:
+    try:
+        from .. import state
+        dead = dict(state._STATE.get("dead_credentials", {}))
+        dead[name] = _cred_fp(name)
+        state._STATE["dead_credentials"] = dead
+        state.save()
+    except Exception:
+        pass
+
+
 def try_alternates(current: str, tried: set):
     """First healthy brain the user hasn't already burned this turn.
 
@@ -61,7 +94,8 @@ def try_alternates(current: str, tried: set):
 
 
 def poison(name: str, reason: str) -> None:
-    """401/403 rejections are permanent for the session: stop proposing that brain."""
+    """401/403 rejections are permanent: skip that brain until its key changes."""
+    _mark_dead_credential(name)  # restart-proof, keyed to the exact credential
     if name in _POISONED:
         return
     _POISONED.add(name)
@@ -91,7 +125,7 @@ class OpenAIProvider:
     name = "openai"
 
     def __init__(self) -> None:
-        if "openai" in _POISONED:
+        if "openai" in _POISONED or _permanent_poison_active("openai"):
             raise ProviderError("OpenAI rejected its key earlier this session — skipped.")
         if not config.openai_api_key:
             raise ProviderError("OPENAI_API_KEY is not set.")
@@ -545,7 +579,7 @@ class RemoteJarvisProvider:
             raise ProviderError(
                 "JARVIS_REMOTE_URL isn't set — point it at a running Jarvis server."
             )
-        if "remote" in _POISONED:
+        if "remote" in _POISONED or _permanent_poison_active("remote"):
             raise ProviderError("Remote brain rejected its key earlier this session — skipped.")
         self.base = url.rstrip("/")
         self.model = "remote jarvis"

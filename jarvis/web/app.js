@@ -290,7 +290,23 @@ async function loadSettings() {
       <div class="st-rows">${rows}</div>
       <p class="st-note" style="margin-top:8px">${esc(sec.blurb)}</p></div>`);
   }
-  root.innerHTML = chunks.join("");
+  // Rejected-credential banner: dead keys stopped posing as brains.
+  const deadBanner = (d.dead_keys || []).length
+    ? `<div class="dead-keys"><b>🔑 Rejected credential${(d.dead_keys || []).length > 1 ? "s" : ""}:</b> ` +
+      (d.dead_keys || []).map((k) =>
+        `<span class="dk-pill">${esc(k)}</span><button class="dk-clear" data-deadclear="${esc(k)}">delete it</button>`
+      ).join(" ") +
+      ` <span class="st-note">— these brains 401'd and are blacklisted until the key changes. Deleting stops the error storms.</span></div>`
+    : "";
+  root.innerHTML = deadBanner + chunks.join("");
+  root.querySelectorAll("[data-deadclear]").forEach((b) => (b.onclick = async () => {
+    const prov = b.dataset.deadclear;
+    const field = { openai: "OPENAI_API_KEY", remote: "JARVIS_REMOTE_KEY" }[prov];
+    if (!field) return toast(`Clear ${prov}'s key in the Brain section below.`, "warn");
+    const r = await post("/api/settings", { updates: { [field]: "" } });
+    if (r.ok) { toast(`${prov} key purged — it will never 401 again.`); loadSettings(); loadStatus(); }
+    else toast(r.error || "Couldn't clear the key", "err");
+  }));
 
   $("#set-speak").onclick = (e) => {
     SPEAK_BACK = !SPEAK_BACK;

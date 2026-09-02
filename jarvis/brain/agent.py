@@ -197,14 +197,40 @@ class Agent:
                 # the configured provider so the next message retries it —
                 # a single Ollama hiccup must not downgrade the whole
                 # session (previously this swapped self.provider for good).
-                from .providers import OfflineProvider
+                from .providers import OfflineProvider, poison, try_alternates
 
                 self.provider_errors = [error]
-                stand_in = OfflineProvider()
-                if on_token:
-                    result = stand_in.chat_stream(messages, tools, on_token)
-                else:
-                    result = stand_in.chat(messages, tools)
+                # The standing ask: don't error out — let a neighbor brain take
+                # the turn. Walk candidates (poisoned/dead creds excluded) and
+                # use the first that ANSWERS; offline stays the last resort.
+                name_l = self.provider_name.lower()
+                seen = {name_l}
+                result = None
+                while True:
+                    cand = try_alternates(name_l, seen) or OfflineProvider()
+                    cand_name = getattr(cand, "name", "offline").lower()
+                    seen.add(cand_name)
+                    try:
+                        if on_token and hasattr(cand, "chat_stream"):
+                            result = cand.chat_stream(messages, tools, on_token)
+                        else:
+                            result = cand.chat(messages, tools)
+                        # Survivor takes the wheel (next turn's upgrade probe
+                        # re-seats the preferred brain the moment it revives),
+                        # so labels stay honest: chips say WHO talked.
+                        junk = self.provider_name
+                        self.provider = cand
+                        if cand_name != "offline":
+                            cand.last_turn_label = f"fallback: {junk} died → {cand.name}"
+                        break
+                    except Exception as exc2:
+                        poison(cand_name, f"{type(exc2).__name__}: died taking over")
+                        if cand_name == "offline":
+                            result = {"content":
+                                f"Every brain is down right now, {config.user_title}. ({error})",
+                                "tool_calls": []}
+                            break
+                        continue
                 if actions:
                     # The primary brain already ran its tools before dying on
                     # the recap. The stand-in re-matching the same intent would

@@ -485,18 +485,25 @@ def _nudge_watcher() -> None:
 
 @app.get("/api/settings")
 def get_settings() -> Dict[str, Any]:
+    from . import state as _state
+    dead_keys = list((_state._STATE.get("dead_credentials") or {}).keys())
     sections = []
     for s in SETTINGS_FIELDS:
         fields = []
         for f in s["fields"]:
             fields.append({**f, "value": getattr(config, f["attr"])})
         sections.append({"section": s["section"], "blurb": s["blurb"], "fields": fields})
-    return {"sections": sections}
+    return {"sections": sections, "dead_keys": dead_keys}
 
 
 @app.post("/api/settings")
 def update_settings(body: SettingsIn) -> Dict[str, Any]:
     applied: Dict[str, Any] = {}
+    unknown = [k for k in (body.updates or {}) if k not in _FIELD_BY_KEY]
+    if unknown:
+        # A control that saves to an unknown key is a DEAD control masquerading
+        # as alive ("Settings for looks"). Fail loudly so it's noticed.
+        return {"ok": False, "error": f"unknown setting key(s): {', '.join(unknown)}"}
     for key, raw in (body.updates or {}).items():
         f = _FIELD_BY_KEY.get(key)
         if not f:

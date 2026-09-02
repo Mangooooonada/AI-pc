@@ -175,7 +175,8 @@ def get_weather(city: str = "") -> str:
 
 @skill(
     "get_news",
-    "Get current top headlines, optionally on a topic.",
+    "Get current top headlines — world news, a topic ('news about AI'), or LOCAL news: "
+    "for 'news in my area/near me/local news' use the user's remembered location as topic.",
     {
         "type": "object",
         "properties": {"topic": {"type": "string", "description": "Optional topic"}},
@@ -184,13 +185,33 @@ def get_weather(city: str = "") -> str:
               "what is the news", "tell me the news", "latest news", "news today",
               "today\"s news", "any news", "get me the news", "news", "headlines", "today\u2019s news",
               "whats on the news", "what is on the news", "tell me whats on the news",
-              "what are the headlines", "read me the news", "check the news"],
+              "what are the headlines", "read me the news", "check the news",
+              "news in my area", "local news", "news near me", "whats happening locally",
+              "what's happening in my area", "news in {topic}", "news from {topic}"],
 )
+def _remembered_city() -> str:
+    """'lives in Cathedral City' memory → 'Cathedral City'. '' when unknown."""
+    try:
+        from .. import state
+        import re as _re
+        for m in state.list_memories(limit=200):
+            hit = _re.search(r"user (?:lives in|is based in)\s+(.+?)\.?$",
+                             m.get("text", ""), _re.I)
+            if hit:
+                return hit.group(1).strip(" .")
+    except Exception:
+        pass
+    return ""
+
+
 def get_news(topic: str = "") -> str:
     import re
     import xml.etree.ElementTree as ET
 
     t = (topic or "").strip()
+    if t.lower() in {"my area", "local", "near me", "my city", "my town", "around me"} or not t:
+        t = _remembered_city() if t.lower() in {"my area", "local", "near me",
+                                                "my city", "my town", "around me"} else t
     url = (
         f"https://news.google.com/rss/search?q={quote_plus(t)}&hl=en-US&gl=US&ceid=US:en"
         if t
