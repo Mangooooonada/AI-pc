@@ -138,7 +138,7 @@ class Config:
     ollama_vision_model: str = os.getenv("OLLAMA_VISION_MODEL", "")
     # How many tool schemas a turn is allowed to see. Smaller packs = fewer
     # malformed tool calls out of small models + more context for chat.
-    tool_pack: int = _int("JARVIS_TOOL_PACK", 16)
+    tool_pack: int = _int("JARVIS_TOOL_PACK", 20)  # skills offered per turn (LLM brains)
     temperature: float = _float("JARVIS_TEMPERATURE", 0.4)
     max_history: int = _int("JARVIS_MAX_HISTORY", 40)  # longer short-term thread
 

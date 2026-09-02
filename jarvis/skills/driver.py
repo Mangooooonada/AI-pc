@@ -85,12 +85,26 @@ def review_learnings(action: str = "review") -> str:
         "required": ["goal"],
     },
     triggers=["take control {goal}", "take control and {goal}", "drive my computer to {goal}",
-              "automate {goal} on my computer"],
+              "automate {goal} on my computer", "take control of my pc",
+              "take control of my computer", "take over my pc", "take over my computer",
+              "i want you to take control", "drive my computer"],
 )
 def take_control(goal: str = "") -> str:
     goal = (goal or "").strip()
+    for junk in ("of my pc", "of my computer", "my pc", "my computer", "of it"):
+        if goal.lower() == junk:
+            goal = ""
     if not goal:
-        return "What should I do? Tell me the goal and I'll plan every click first."
+        from .. import computer_use
+        if not computer_use.enabled():
+            return ("I absolutely can drive this PC — mouse, keyboard, apps, the works — "
+                    "but Computer Use ships OFF on purpose. Enable it once in "
+                    "Settings → JARVIS_COMPUTER_USE (or .env). Then say e.g. "
+                    "'take control and open spotify' — I'll show you every step "
+                    "first, and only act when you say 'execute the plan'.")
+        return ("Tell me the task — like 'take control and open spotify and start "
+                "my playlist' — and I'll lay out every click for your approval "
+                "before anything moves.")
     from .. import computer_use
     return computer_use.propose_plan(goal)
 
