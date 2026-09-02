@@ -49,10 +49,21 @@ def main() -> int:
     bundle = ROOT / "dist" / f"JARVIS-v{ver}.zip"
     bundle.parent.mkdir(exist_ok=True)
     sh("git", "archive", "--output", str(bundle), "--prefix", f"JARVIS-v{ver}/", f"v{ver}")
-    sh("gh", "release", "create", f"v{ver}", "--title", title,
-       "--notes", f"Jarvis {ver}{f' \"{codename}\"' if codename else ''}. "
-                  "Source snapshot attached; extract and double-click JARVIS.bat.",
-       str(bundle))
+    sh_ = subprocess.run(  # an asset-upload hiccup must NOT kill the release
+        ["gh", "release", "create", f"v{ver}", "--title", title, "--verify-tag",
+         "--notes", f"Jarvis {ver}{f' \"{codename}\"' if codename else ''}. "
+                    "Source snapshot attached (or use the auto 'Source code zip'); "
+                    "extract and double-click JARVIS.bat.",
+         str(bundle)],
+        cwd=ROOT, capture_output=True, text=True)
+    if sh_.returncode != 0 and "release already exists" in sh_.stderr.lower():
+        sh_.returncode = 0
+    if sh_.returncode != 0:
+        # upload blocked (some networks) → release without asset; GitHub still
+        # auto-serves the tag's source zip on the Releases page.
+        sh("gh", "release", "create", f"v{ver}", "--title", title, "--verify-tag",
+           "--notes", f"Jarvis {ver}. Extract the source zip below and double-click JARVIS.bat.")
+        print(f"(asset upload failed — tag snapshot still served {sh_.stderr.strip()[:80]})")
     print(f"Released {title} — old versions untouched on the Releases page.")
     return 0
 
