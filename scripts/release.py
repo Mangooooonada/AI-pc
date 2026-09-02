@@ -40,6 +40,13 @@ def main() -> int:
         patch += 1
     ver = f"{major}.{minor}.{patch}"
     vf.write_text(ver + "\n")
+    init = ROOT / "jarvis" / "__init__.py"
+    it = init.read_text()
+    if "except OSError:" in it:  # keep frozen-build fallback honest
+        import re as _re
+        it = _re.sub(r'__version__ = "[0-9.]+"\n$', f'__version__ = "{ver}"\n',
+                     it, flags=_re.M)
+        init.write_text(it)
 
     sh("git", "add", "VERSION")
     sh("git", "commit", "-m", f'Release v{ver}' + (f' "{codename}"' if codename else ""))

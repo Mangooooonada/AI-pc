@@ -88,10 +88,13 @@ def open_folder(path: str = "workspace") -> str:
     p = _resolve(path)
     if not p.exists():
         return f"{p} doesn't exist."
-    if IS_WINDOWS:
-        os.startfile(str(p))  # type: ignore[attr-defined]
-    else:
-        subprocess.Popen(["xdg-open", str(p)])
+    try:
+        if IS_WINDOWS:
+            os.startfile(str(p))  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open", str(p)])
+    except (OSError, FileNotFoundError) as exc:
+        return f"Couldn't open {p}: folder opener missing on this machine ({exc})."
     return f"Opened {p}."
 
 
