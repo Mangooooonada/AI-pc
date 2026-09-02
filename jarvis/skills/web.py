@@ -115,8 +115,9 @@ def web_search(query: str) -> str:
             if host:
                 lines.append(f"      ↳ {host} — say \"read {res['link']}\" and I'll pull the page")
         return "\n".join(lines)
-    webbrowser.open(f"https://duckduckgo.com/?q={quote_plus(q)}")
-    return f"I couldn't summarise that, so I opened a search for '{q}' in your browser."
+    # Never pop a browser uninvited — the operator asked a QUESTION, like a person.
+    return (f"I couldn't pull live results for '{q}' right now — search service unreachable. "
+            "Ask again in a moment, or say \"open a browser search for {q}\" to see it yourself.")
 
 
 @skill(
@@ -187,7 +188,10 @@ def get_weather(city: str = "") -> str:
               "whats on the news", "what is on the news", "tell me whats on the news",
               "what are the headlines", "read me the news", "check the news",
               "news in my area", "local news", "news near me", "whats happening locally",
-              "what's happening in my area", "news in {topic}", "news from {topic}"],
+              "what's happening in my area", "news in {topic}", "news from {topic}",
+              "todays news", "what is todays news", "today's news",
+              "news in the world", "world news", "news in the {topic} world",
+              "new in {topic}", "the new in {topic}", "any new on {topic}"],
 )
 def _remembered_city() -> str:
     """'lives in Cathedral City' memory → 'Cathedral City'. '' when unknown."""

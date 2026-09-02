@@ -702,7 +702,8 @@ setInterval(() => {  // live focus line refreshes while you're on the view
 }, 6000);
 
 async function loadStatus() {
-  STATUS = await api("/api/status");
+  try {
+    STATUS = await api("/api/status");
   (STATUS.alerts || []).forEach((a) => {
     toast(`🔔 ${a.text}`, "good");
     if (SPEAK_BACK) say(a.text);
@@ -739,8 +740,13 @@ async function loadStatus() {
   $("#tool-count").textContent = `${STATUS.skills} registered`;
   $("#mem-turns").textContent = STATUS.stats?.session_turns ?? 0;
   $("#mem-tools").textContent = STATUS.stats?.tool_calls ?? 0;
+  } catch (e) {
+    // backend (or your own hiccup): the dashboard must NEVER freeze in BOOTING
+    const pill = document.querySelector("#sys-pill");
+    if (pill) { pill.textContent = "LINK DOWN — retrying"; pill.style.color = "#f0b35c"; }
+    try { post("/api/uierror", { text: "loadStatus: " + (e && e.message || e) }); } catch (_2) {}
+  }
 }
-
 async function loadSystem() {
   const d = await api("/api/system");
   for (const key of ["cpu", "memory", "disk"]) {

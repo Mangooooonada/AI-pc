@@ -35,6 +35,29 @@ class ProviderError(RuntimeError):
 
 
 _POISONED: set = set()  # provider names that AUTH-FAILED this session
+_THROTTLED: dict = {}  # provider -> epoch when its rate-limit cooldown ends
+
+
+def throttle(name: str, reason: str = "rate limit", cooldown: int = 900) -> None:
+    """429s aren't crimes (free tiers throttle mid-conversation) — bench that
+    provider for the cooldown; it walks back on alone when the clock runs out."""
+    import time as _t
+    if _THROTTLED.get(name, 0) > _t.time():
+        return
+    _THROTTLED[name] = _t.time() + cooldown
+    try:
+        from .. import state
+        state.add_notification(
+            f"⏳ {name} is rate-limited ({reason[:60]}) — benched {cooldown // 60} min, "
+            "then it re-joins the lineup automatically.")
+    except Exception:
+        pass
+
+
+def throttled(name: str) -> bool:
+    import time as _t
+    until = _THROTTLED.get(name, 0)
+    return bool(until and until > _t.time())
 
 
 def _cred_fp(name: str) -> str:
@@ -78,7 +101,7 @@ def try_alternates(current: str, tried: set):
     offline), skipping the current one, poison pills, and ones already tried.
     """
     for cand in ("ollama", "remote", "openai", "offline"):
-        if cand in _POISONED or cand == current or cand in tried:
+        if cand in _POISONED or cand == current or cand in tried or throttled(cand):
             continue
         try:
             if cand == "ollama":
@@ -127,6 +150,8 @@ class OpenAIProvider:
     def __init__(self) -> None:
         if "openai" in _POISONED or _permanent_poison_active("openai"):
             raise ProviderError("OpenAI rejected its key earlier this session — skipped.")
+        if throttled("openai"):
+            raise ProviderError("Cloud brain is benched by a rate-limit cooldown — try in a few minutes.")
         if not config.openai_api_key:
             raise ProviderError("OPENAI_API_KEY is not set.")
         self.model = config.openai_model
@@ -208,7 +233,8 @@ class OpenAIProvider:
             poison("openai", "invalid API key (401)")
             raise ProviderError("OpenAI rejected the API key (401) after model healing.")
         if r.status_code == 429:
-            raise ProviderError("OpenAI rate limit or quota exceeded (429).")
+            throttle("openai", r.text[:60])
+            raise ProviderError("OpenAI rate limit (429) — benched for a cooldown.")
         if r.status_code >= 400:
             raise ProviderError(f"OpenAI error {r.status_code}: {r.text[:200]}")
         return r
@@ -252,6 +278,7 @@ class OpenAIProvider:
 
         content_parts: List[str] = []
         tool_acc: Dict[int, Dict[str, Any]] = {}
+        r.encoding = "utf-8"  # stop requests guessing ISO-8859-1 ("â€œ" mojibake)
         for line in r.iter_lines(decode_unicode=True):
             if not line or not line.startswith("data:"):
                 continue
@@ -539,6 +566,7 @@ class OllamaProvider:
 
         content_parts: List[str] = []
         tool_calls: List[Dict[str, Any]] = []
+        r.encoding = "utf-8"  # stop requests guessing ISO-8859-1 ("â€œ" mojibake)
         for line in r.iter_lines(decode_unicode=True):
             if not line:
                 continue

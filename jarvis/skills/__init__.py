@@ -203,6 +203,11 @@ def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
         # "what is 15% of 240" is arithmetic, not an encyclopedia lookup.
         if best[1] in {"wikipedia_summary", "web_search"} and looks_like_math(text):
             return "calculate", {"expression": best[2].get("topic") or best[2].get("query") or text}
+        # "what is the news/todays news/headlines…" is JOURNALISM, not an
+        # encyclopedia lookup — tie-loses used to hand it to Wikipedia.
+        if best[1] in {"wikipedia_summary", "web_search"} and re.search(
+                r"\b(news?|headlines?)\b", low):
+            return "get_news", {"topic": ""}
         return best[1], best[2]
     if looks_like_math(text):
         return "calculate", {"expression": text}
