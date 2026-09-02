@@ -26,7 +26,12 @@ answers and error turns skipped. **Wait until the summary says ~200+ samples**
 
 0. Ask Jarvis **"is my PC ready for training"** — he checks VRAM, disk, and
    data volume and gives a green/cramped/Path-B verdict on the spot.
-1. `nvidia-smi` works and shows ≥16 GB.
+1. `nvidia-smi` works, ideally ≥16 GB. **12 GB works too — this kit was tuned
+   for exactly that** (the script auto-detects a 12 GB card and switches to
+   seq 2048 / batch 1 / accum 8 / rank 8, which fits because Jarvis chat turns
+   are short). Before starting: close Chrome/Edge, Discord, Steam and any
+   wallpaper/GPU apps — they quietly hold 1–2 GB of VRAM. If it still OOMs,
+   rerun with `--base qwen3-4b` (the built-in 12 GB comfort pick).
 2. Easiest on Windows: do this inside **WSL2 (Ubuntu)** with the NVIDIA driver
    on the Windows side. Then:
    ```bash

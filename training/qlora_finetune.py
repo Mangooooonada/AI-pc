@@ -17,11 +17,24 @@ import json
 import sys
 
 BASE_MODELS = {
-    # friendly name -> HF repo. Keep these 4-bit-loadable in 16-24GB VRAM.
+    # friendly name -> HF repo. Keep these 4-bit-loadable in 12-24GB VRAM.
     "qwen3-8b": "unsloth/Qwen3-8B",
+    "qwen3-4b": "unsloth/Qwen3-4B",   # 12GB comfort pick: big quality, small bill
     "llama-3.1-8b": "unsloth/Meta-Llama-3.1-8B-Instruct",
     "mistral-7b": "unsloth/mistral-7b-instruct-v0.3-bnb-4bit",
 }
+
+
+def resolve_settings(vram_gb: float, args) -> dict:
+    """Pick seq/batch/accum/r from the actual card unless the user overrode them."""
+    tight = bool(vram_gb) and vram_gb < 13.5
+    return {
+        "seq": args.seq or (2048 if tight else 4096),
+        "batch": args.batch or (1 if tight else 2),
+        "accum": args.accum or (8 if tight else 4),
+        "r": args.r or (8 if tight else 16),
+        "tight": tight,
+    }
 
 
 def parse_args(argv=None):
@@ -33,7 +46,10 @@ def parse_args(argv=None):
     ap.add_argument("--out", default="jarvis-me", help="Adapter output dir")
     ap.add_argument("--epochs", type=float, default=1.0, help="Training epochs (default 1)")
     ap.add_argument("--max-steps", type=int, default=-1, help="Hard cap on steps (-1 = full epochs)")
-    ap.add_argument("--seq", type=int, default=4096, help="Max sequence length")
+    ap.add_argument("--seq", type=int, default=None, help="Max sequence length (auto: 2048 on 12GB cards, else 4096)")
+    ap.add_argument("--batch", type=int, default=None, help="Per-device batch size (auto)")
+    ap.add_argument("--accum", type=int, default=None, help="Gradient accumulation (auto)")
+    ap.add_argument("--r", type=int, default=None, help="LoRA rank (auto: 8 on 12GB, else 16)")
     ap.add_argument("--merge", action="store_true", help="Also write merged full model for GGUF conversion")
     return ap.parse_args(argv)
 
@@ -54,6 +70,14 @@ def main(argv=None) -> int:
         return 2
 
     base = BASE_MODELS.get(args.base, args.base)
+    vram = (torch.cuda.get_device_properties(0).total_memory / 1e9
+            if torch.cuda.is_available() else 0.0)
+    tun = resolve_settings(vram, args)
+    if tun["tight"]:
+        print(f"12GB-class card detected ({vram:.0f} GB). Tuning down: "
+              f"seq={tun['seq']} batch={tun['batch']} accum={tun['accum']} r={tun['r']}.")
+        print("Close VRAM hogs first (Chrome/Discord/game launchers). "
+              "If it still OOMs, retry with --base qwen3-4b — the comfort pick on your card.")
     with open(args.data, encoding="utf-8") as fh:
         rows = [json.loads(l) for l in fh if l.strip()]
     if len(rows) < 50:
@@ -83,11 +107,12 @@ def main(argv=None) -> int:
         args=SFTConfig(
             output_dir=args.out + "-ckpt",
             num_train_epochs=args.epochs, max_steps=args.max_steps,
-            per_device_train_batch_size=2, gradient_accumulation_steps=4,
+            per_device_train_batch_size=tun["batch"],
+            gradient_accumulation_steps=tun["accum"],
             learning_rate=2e-4, warmup_steps=5, logging_steps=5,
             bf16=is_bfloat16_supported(), fp16=not is_bfloat16_supported(),
             optim="adamw_8bit", seed=42, report_to="none",
-            dataset_text_field="text", max_seq_length=args.seq,
+            dataset_text_field="text", max_seq_length=tun["seq"],
         ),
     )
     trainer.train()
