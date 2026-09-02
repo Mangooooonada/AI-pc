@@ -34,6 +34,23 @@ class ProviderError(RuntimeError):
     pass
 
 
+_POISONED: set = set()  # provider names that AUTH-FAILED this session
+
+
+def poison(name: str, reason: str) -> None:
+    """401/403 rejections are permanent for the session: stop proposing that brain."""
+    if name in _POISONED:
+        return
+    _POISONED.add(name)
+    try:
+        from .. import state as _st
+        _st.add_notification(
+            f"🔑 Brain refused: {name} rejected its credentials — skipping it "
+            f"for this session ({reason[:60]}). Fix the key in Settings.")
+    except Exception:
+        pass
+
+
 def _parse_args(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
         return raw
@@ -51,6 +68,8 @@ class OpenAIProvider:
     name = "openai"
 
     def __init__(self) -> None:
+        if "openai" in _POISONED:
+            raise ProviderError("OpenAI rejected its key earlier this session — skipped.")
         if not config.openai_api_key:
             raise ProviderError("OPENAI_API_KEY is not set.")
         self.model = config.openai_model
@@ -77,6 +96,7 @@ class OpenAIProvider:
             timeout=90,
         )
         if r.status_code == 401:
+            poison("openai", "invalid API key (401)")
             raise ProviderError("OpenAI rejected the API key (401).")
         if r.status_code == 429:
             raise ProviderError("OpenAI rate limit or quota exceeded (429).")
@@ -502,6 +522,8 @@ class RemoteJarvisProvider:
             raise ProviderError(
                 "JARVIS_REMOTE_URL isn't set — point it at a running Jarvis server."
             )
+        if "remote" in _POISONED:
+            raise ProviderError("Remote brain rejected its key earlier this session — skipped.")
         self.base = url.rstrip("/")
         self.model = "remote jarvis"
         self.note: Optional[str] = None
@@ -550,6 +572,7 @@ class RemoteJarvisProvider:
             timeout=180,
         )
         if r.status_code in {401, 403}:
+            poison("remote", "pairing key rejected")
             raise ProviderError("Remote brain rejected the pairing key (401/403).")
         if r.status_code >= 400:
             raise ProviderError(f"Remote brain error {r.status_code}: {r.text[:200]}")
@@ -615,10 +638,10 @@ class OfflineProvider:
             }
         return {
             "content": (
-                f"I'm in offline mode, {config.user_title}, so I only understand direct commands "
-                "right now — things like \"open spotify\", \"set volume to 30\", \"what's the weather\", "
-                "or \"take a screenshot\". Say \"what can you do\" for the full list. "
-                "To have a real conversation, install Ollama (free) or add an OpenAI key."
+                f"My usual brain isn't answering right now, {config.user_title}, so I'm on the "
+                "offline engine — direct commands only: \"open spotify\", \"set volume to 30\", "
+                "\"what's the weather\", \"take a screenshot\". Say \"what can you do\" for the "
+                "full list. If Ollama is running this clears itself on the next message."
             ),
             "tool_calls": [],
         }

@@ -219,6 +219,8 @@ def list_capabilities() -> str:
         "required": [],
     },
     triggers=["what was our first conversation", "our first conversation",
+              "what was our first convo", "our first convo", "revisit it",
+              "revisit our conversation", "our earliest conversation",
               "what did we talk about", "what did we talk about {query}",
               "do you remember when i asked {query}", "do you remember when i said {query}",
               "search my conversations for {query}", "find when i asked about {query}",
