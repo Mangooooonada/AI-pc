@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 BASE_MODELS = {
@@ -74,6 +75,9 @@ def main(argv=None) -> int:
             if torch.cuda.is_available() else 0.0)
     tun = resolve_settings(vram, args)
     if tun["tight"]:
+        # On 12GB cards the killer is fragmentation, not capacity — the
+        # expandable-segments allocator shrugs off most of those OOMs.
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         print(f"12GB-class card detected ({vram:.0f} GB). Tuning down: "
               f"seq={tun['seq']} batch={tun['batch']} accum={tun['accum']} r={tun['r']}.")
         print("Close VRAM hogs first (Chrome/Discord/game launchers). "
