@@ -325,6 +325,39 @@ def _ensure_ollama_running() -> None:
         logger.warning("couldn't auto-start ollama: %s", exc)
 
 
+def _tk_boot_splash():
+    """A Featherweight tkinter splash shown during the import storm, BEFORE the
+    WebView window exists. This is how the first-boot 'Not Responding' dies:
+    the CPU-hungry uvicorn/server imports used to run on a thread WHILE the
+    WebView2 GUI was initializing, starving its UI thread for seconds at a
+    time → Windows flagged the window. Now the storm completes first; the
+    window is only created once the backend is answering, so it pumps its
+    message loop from birth."""
+    try:
+        import tkinter as tk
+    except Exception:
+        return None
+    try:
+        root = tk.Tk()
+        root.overrideredirect(True)
+        root.attributes("-topmost", True)
+        w, h = 340, 110
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 3}")
+        root.configure(bg="#020610")
+        frame = tk.Frame(root, bg="#020610", highlightbackground="#12a8cf",
+                         highlightthickness=1)
+        frame.pack(fill="both", expand=True)
+        tk.Label(frame, text="J A R V I S", fg="#3ce0ff", bg="#020610",
+                 font=("Consolas", 18, "bold")).pack(pady=(22, 2))
+        tk.Label(frame, text="WAKING SYSTEMS…", fg="#1c6b85", bg="#020610",
+                 font=("Consolas", 8)).pack()
+        root.update()
+        return root
+    except Exception:
+        return None
+
+
 def _tray_image():
     """A tiny glowing Jarvis orb, drawn with PIL — no asset dependency."""
     from PIL import Image, ImageDraw
@@ -444,6 +477,42 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False,
 
     port = _free_port(port)
 
+    # ── early boot: run the import storm BEFORE the OS window exists ──
+    # (see _tk_boot_splash docstring). Skipped when the user opts out or when
+    # the environment already proved fine (JARVIS_NO_EARLY_BOOT=1).
+    _early_done = False
+    early_app = None
+    if not os.environ.get("JARVIS_NO_EARLY_BOOT"):
+        splash_tk = _tk_boot_splash()
+        try:
+            logger.info("early boot: importing server stack before window creation")
+            t_imp = time.time()
+            import uvicorn as _uv
+
+            from .server import app as early_app
+            import uvicorn  # noqa: F401  (local alias warm)
+            logger.info("early boot: imports took %.1fs", time.time() - t_imp)
+
+            def _early_serve() -> None:
+                try:
+                    _uv.run(early_app, host="127.0.0.1", port=port, log_level="error")
+                except Exception:
+                    logger.exception("early backend thread died")
+
+            threading.Thread(target=_early_serve, daemon=True,
+                             name="jarvis-backend").start()
+            if _wait_for_server(port, timeout=95.0):
+                _early_done = True
+            else:
+                logger.warning("early boot: backend didn't answer in time; using legacy splash boot")
+        except Exception:
+            logger.exception("early boot failed; using legacy splash boot")
+        if splash_tk is not None:
+            try:
+                splash_tk.destroy()
+            except Exception:
+                pass
+
     def _serve() -> None:
         try:
             logger.info("backend: importing server package…")
@@ -478,8 +547,8 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False,
     bridge = Bridge()
     window = webview.create_window(
         WINDOW_TITLE,
-        url=None,
-        html=splash,
+        url=(f"http://127.0.0.1:{port}" if _early_done else None),
+        html=(None if _early_done else splash),
         width=1440,
         height=900,
         min_size=(1080, 680),
@@ -568,7 +637,10 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
         except Exception:
             logger.exception("couldn't even show the boot-failure page")
 
-    threading.Thread(target=_handoff, daemon=True).start()
+    if not _early_done:
+        threading.Thread(target=_handoff, daemon=True).start()
+    else:
+        ui_state["loaded"] = True  # about to paint straight onto the live UI
 
     def _hard_quit() -> None:
         # Make sure the uvicorn thread doesn't keep the process alive.
