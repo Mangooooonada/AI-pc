@@ -322,6 +322,7 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 | **Docker** | "docker ps", "docker logs for web", "restart container api" |
 | **Documents** | "what do my documents say about the wifi password", "search my documents for ramen", "list my documents" |
 | **Google** | "google status", "what's on my google calendar", "check my gmail" |
+| **Self-training** | "is my PC ready for training", "export my training data" → `training/README.md` |
 | **System** | "system status", "list processes by memory", "empty the recycle bin" |
 | **Power** | "lock the computer", "sleep", "shut down in 60 seconds", "cancel shutdown" |
 | **Screen & eyes** | "take a screenshot", "what's on my screen?" *(needs a vision model: `ollama pull llava`)* |

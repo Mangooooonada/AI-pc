@@ -24,6 +24,8 @@ answers and error turns skipped. **Wait until the summary says ~200+ samples**
 
 ## Step 2A — Setup: your own GPU
 
+0. Ask Jarvis **"is my PC ready for training"** — he checks VRAM, disk, and
+   data volume and gives a green/cramped/Path-B verdict on the spot.
 1. `nvidia-smi` works and shows ≥16 GB.
 2. Easiest on Windows: do this inside **WSL2 (Ubuntu)** with the NVIDIA driver
    on the Windows side. Then:
