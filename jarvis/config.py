@@ -161,6 +161,9 @@ class Config:
     briefing: bool = _bool("JARVIS_BRIEFING", True)   # morning briefing on first launch of the day
     auto_mem: bool = _bool("JARVIS_AUTO_MEM", True)     # quietly save important personal facts   # morning briefing on first launch of the day
     tray: bool = _bool("JARVIS_TRAY", True)           # close → system tray instead of quitting
+    observe: bool = _bool("JARVIS_OBSERVE", False)    # watch active-app history to learn habits
+    observe_poll: int = _int("JARVIS_OBSERVE_POLL", 4)  # seconds between samples
+    computer_use: bool = _bool("JARVIS_COMPUTER_USE", False)  # Jarvis may drive the GUI (plan-first)
     hotkey: bool = _bool("JARVIS_HOTKEY", True)       # Ctrl+J summons the window (Windows)
     # Share the UI on the local network (phone control). Enabling binds the
     # server to 0.0.0.0 on next launch and requires net_key from other devices.

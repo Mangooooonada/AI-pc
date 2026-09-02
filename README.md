@@ -214,6 +214,29 @@ choose **Add to Home Screen** for a full-screen Jarvis with its own icon.
 And barge-in works both ways: while Jarvis is speaking, say the wake word
 and he stops talking and starts listening. No more waiting out a monologue.
 
+### It watches, learns your habits, and (with permission) drives
+
+Two opt-in superpowers, both **off by default**:
+
+1. **Observer** — say *"start watching what I do"* and Jarvis quietly logs
+   which apps you use and when (app-switch events only — **never keystrokes,
+   never text, never screenshots in the log**; capped, local, wipeable).
+   When the same ritual shows up on several different days around the same
+   hour — Outlook then Teams then Spotify at 8:55 — you get a 🧠 nudge:
+   *"I spotted a habit…"* Say **"review my habits"** then **"learn it"** and it
+   becomes a real workflow you can trigger or schedule as a routine.
+   *"what was I doing today"* gives you the honest timeline.
+
+2. **Computer use** — flip JARVIS_COMPUTER_USE in Settings and say
+   *"take control and open spotify, then start my playlist."* Jarvis plans
+   the exact clicks/keystrokes FIRST and shows them to you; only after you say
+   **"execute the plan"** does anything touch the mouse or keyboard. It never
+   types into sign-in/payment dialogs, caps plans at 12 steps, audits every
+   action to your feed, and **"stop the computer"** halts it mid-flight.
+   With a vision model installed (llava/qwen3-vl) it plans *what it actually
+   sees*; without one it plans from window titles. This is a pilot, not a
+   chauffeur — keep it supervised.
+
 ### Raise your own model on you (fine-tuning kit)
 
 When you've logged a few hundred good turns, say **"export my training
@@ -323,6 +346,8 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 | **Documents** | "what do my documents say about the wifi password", "search my documents for ramen", "list my documents" |
 | **Google** | "google status", "what's on my google calendar", "check my gmail" |
 | **Self-training** | "is my PC ready for training", "export my training data" → `training/README.md` |
+| **Observer** | "start watching what I do", "what was I doing today", "review my habits", "learn it" |
+| **Computer use** | "take control and open notepad", "execute the plan", "stop the computer" |
 | **System** | "system status", "list processes by memory", "empty the recycle bin" |
 | **Power** | "lock the computer", "sleep", "shut down in 60 seconds", "cancel shutdown" |
 | **Screen & eyes** | "take a screenshot", "what's on my screen?" *(needs a vision model: `ollama pull llava`)* |
@@ -385,6 +410,8 @@ Everything else lives in `.env` (copy from `.env.example`):
 | `JARVIS_WORKSPACE` | `~/JarvisFiles` | Notes, screenshots and saved state |
 | `JARVIS_DOCS_DIR` | `<workspace>/docs` | Folder the "ask my documents" skill searches |
 | `JARVIS_GOOGLE_CREDENTIALS` | `credentials.json` (auto-found) | Google OAuth Desktop client JSON for Calendar/Gmail |
+| `JARVIS_OBSERVE` | `false` | Observer: learn app-usage habits (app switches only, never keys) |
+| `JARVIS_COMPUTER_USE` | `false` | Let Jarvis drive mouse/keyboard after plan approval |
 
 ---
 

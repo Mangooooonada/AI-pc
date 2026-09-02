@@ -21,6 +21,8 @@ DEFAULT: Dict[str, Any] = {
     "tasks": [],
     "memories": [],
     "conversations": [],
+    "activity": [],
+    "patterns": [],
     "workflows": [],
     "stats": {"tool_calls": 0, "session_turns": 0, "boot_count": 0,
               "route_local": 0, "route_cloud": 0, "route_offline": 0,
@@ -504,3 +506,65 @@ def _relative(delta: timedelta) -> str:
     if hours:
         return f"{prefix}{hours}h {mins}m{suffix}"
     return f"{prefix}{mins}m{suffix}"
+
+
+# ------------------------------------------------------------ observer ----
+def add_activity(app: str, title: str, at: str = "") -> None:
+    """Record an app-switch event. Titles are stored locally only."""
+    app = (app or "").strip().lower()
+    if app.endswith(".exe"):
+        app = app[:-4]
+    with _LOCK:
+        _STATE["activity"].append(
+            {"at": at or _now(), "app": app[:80], "title": (title or "")[:140]}
+        )
+        if len(_STATE["activity"]) > 4000:
+            _STATE["activity"] = _STATE["activity"][-4000:]
+    save()
+
+
+def get_activity(limit: int = 4000) -> List[Dict[str, Any]]:
+    """Chronological activity events (oldest first)."""
+    with _LOCK:
+        return list(_STATE["activity"][-limit:])
+
+
+def clear_activity() -> None:
+    with _LOCK:
+        _STATE["activity"] = []
+    save()
+
+
+def list_patterns(status: str = "") -> List[Dict[str, Any]]:
+    with _LOCK:
+        pats = list(_STATE["patterns"])
+    return [p for p in pats if not status or p.get("status") == status]
+
+
+def upsert_pattern(key: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Create-or-update a detected habit by its dedupe key."""
+    with _LOCK:
+        pats = _STATE["patterns"]
+        if len(pats) >= 60 and not any(p["key"] == key for p in pats):
+            pats[:] = pats[-59:]
+        for p in pats:
+            if p["key"] == key:
+                p.update(patch)
+                save()
+                return dict(p)
+        new = {"key": key, "id": str(uuid.uuid4())[:8],
+               "status": "pending", "created": _now()}
+        new.update(patch)
+        pats.append(new)
+    save()
+    return new
+
+
+def set_pattern_status(key: str, status: str) -> bool:
+    with _LOCK:
+        for p in _STATE["patterns"]:
+            if p["key"] == key:
+                p["status"] = status
+                save()
+                return True
+    return False
