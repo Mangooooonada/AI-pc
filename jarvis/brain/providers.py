@@ -37,6 +37,29 @@ class ProviderError(RuntimeError):
 _POISONED: set = set()  # provider names that AUTH-FAILED this session
 
 
+def try_alternates(current: str, tried: set):
+    """First healthy brain the user hasn't already burned this turn.
+
+    Used when a provider *answers* but keeps refusing: instead of letting the
+    turn die on an apology, walk the other brains (ollama → remote → openai →
+    offline), skipping the current one, poison pills, and ones already tried.
+    """
+    for cand in ("ollama", "remote", "openai", "offline"):
+        if cand in _POISONED or cand == current or cand in tried:
+            continue
+        try:
+            if cand == "ollama":
+                return OllamaProvider()
+            if cand == "remote":
+                return RemoteJarvisProvider()
+            if cand == "openai":
+                return OpenAIProvider()
+            return OfflineProvider()
+        except Exception:
+            continue
+    return None
+
+
 def poison(name: str, reason: str) -> None:
     """401/403 rejections are permanent for the session: stop proposing that brain."""
     if name in _POISONED:

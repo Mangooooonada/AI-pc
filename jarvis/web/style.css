@@ -552,3 +552,10 @@ body.calm .lm-r1,body.calm .lm-r2{animation:none}
 #notif-panel .np-item.unread { color: #fff; }
 #notif-panel .np-item.unread::before { content: "●"; color: #27a0e0; margin-right: 6px; font-size: 9px; }
 #notif-panel .np-when { color: #4d6a82; margin-right: 8px; font-size: 11px; }
+
+/* offline-engine bubbles are UNMISTAKABLE — amber frame, tagged header */
+.msg.bot.offline {
+  border-color: #d7a158 !important;
+  background: rgba(215, 161, 88, 0.07);
+}
+.msg.bot.offline .who { color: #f0b35c; font-weight: 600; }

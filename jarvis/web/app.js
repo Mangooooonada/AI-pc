@@ -927,10 +927,16 @@ function fmtDue(iso) {
 
 function bubble(role, text, actions = [], isErr = false, meta = {}) {
   const el = document.createElement("div");
-  el.className = `msg ${role}${isErr ? " err" : ""}`;
+  const prov = (meta.provider || "").toLowerCase();
+  const isOffline = prov.includes("offline");   // backup brain: styles + label loudly
+  el.className = `msg ${role}${isErr ? " err" : ""}${isOffline ? " offline" : ""}`;
+  // The WHO label says which brain answered — no more squinting for a tiny chip.
+  const who = role === "user" ? "operator"
+    : isOffline ? "jarvis · offline engine"
+    : prov ? `jarvis · ${prov.toUpperCase()}` : "jarvis";
   const chip = (role === "user" || !meta.provider) ? "" :
-    `<div class="prov-chip${meta.provider.includes("offline") ? " warn" : ""}">via ${esc(meta.provider)}</div>`;
-  el.innerHTML = `<span class="who">${role === "user" ? "operator" : "jarvis"}</span>` +
+    `<div class="prov-chip${isOffline ? " warn" : ""}">via ${esc(meta.provider)}</div>`;
+  el.innerHTML = `<span class="who">${who}</span>` +
     `<div>${esc(text)}</div>` +
     actions.map((a) => `<div class="act">⚙ ${esc(a.skill)}${Object.keys(a.arguments || {}).length ? " " + esc(JSON.stringify(a.arguments)) : ""}</div>`).join("") + chip;
   $("#log").appendChild(el);

@@ -146,12 +146,15 @@ class Agent:
         degraded = False  # real brain failed this turn → offline stand-in
         nudge_at: Optional[int] = None  # refusal-retry: history index of the nudge block
         nudged_once = False  # one nudge per turn, then its answer stands
+        failover_tried: set = {getattr(self.provider, "name", "offline")}
 
         _REFUSAL_RX = re.compile(
             r"(i'm afraid i (?:can't|cannot|won't be able)|i can't (?:fetch|access|write|compose|"
             r"create|check|search)|i cannot (?:access|fetch|write|search|browse)|i'm unable to "
             r"(?:access|fetch|connect|browse|search)|i don't have (?:internet|access to "
-            r"(?:the )?internet|the ability)|please open .+manually)", re.I)
+            r"(?:the )?internet|the ability)|please open .+manually|"
+            r"can't tell you everything|don't know what \"?it\"? refers|"
+            r"i'm sorry,? but i can't)", re.I)
 
         def _drop_nudge() -> None:
             nonlocal nudge_at
@@ -222,17 +225,32 @@ class Agent:
                 _drop_nudge()
                 # Refusal interceptor: the small brain said "I can't" while
                 # tools/ability clearly exist and nothing even tried. Nudge once.
-                if (not degraded and not error and not actions and not nudged_once
+                if (not degraded and not error and not actions
                         and _REFUSAL_RX.search(reply)):
-                    nudged_once = True
-                    nudge_at = len(self.history)
-                    self.history.append({"role": "assistant", "content": reply[:400]})
-                    self.history.append({"role": "user", "content":
-                        "[the reply above was wrong: you HAVE the ability — tools cover it, "
-                        "or it's plain writing. Answer the user's actual request now: call "
-                        "the tool in this same message if one applies; if it's a writing/"
-                        "content request, write it in full. No apologies, no 'I can't'.]"})
-                    continue
+                    if not nudged_once:
+                        nudged_once = True
+                        nudge_at = len(self.history)
+                        self.history.append({"role": "assistant", "content": reply[:400]})
+                        self.history.append({"role": "user", "content":
+                            "[the reply above was wrong: you HAVE the ability — tools cover it, "
+                            "or it's plain writing. Answer the user's actual request now: call "
+                            "the tool in this same message if one applies; if it's a writing/"
+                            "content request, write it in full. No apologies, no 'I can't'.]"})
+                        continue
+                    # Still refusing after the nudge → don't serve an apology:
+                    # change brains for this turn (the user asked for this:
+                    # "go to a different AI instead of erroring"). Neighbors
+                    # that 401'd this session are already poisoned off.
+                    from .providers import try_alternates
+                    alt = try_alternates(self.provider_name.lower(), failover_tried)
+                    if alt is not None:
+                        alt.last_turn_label = (
+                            f"fallback: {self.provider_name} refused → {alt.name}"
+                        )
+                        self.provider = alt
+                        failover_tried.add(alt.name)
+                        nudged_once = False  # grant the new brain its one nudge too
+                        continue
                 # Fallback answered because the main brain stumbled this turn —
                 # say so in one clause, or the user thinks the persona broke.
                 if error and degraded and not actions:
