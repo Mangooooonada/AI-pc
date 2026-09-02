@@ -68,6 +68,64 @@ def scrub_messages(messages: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]]
     return out, total
 
 
+_MEM_HEADERS = ("Known facts about the user",)  # system-prompt memory block marker
+
+
+def _personal_tokens() -> List[str]:
+    """Literal strings that must NEVER leave the machine (derived from long-term
+    memory: your name, your dog's name, where you live, your age…)."""
+    try:
+        from . import state
+        toks = set()
+        for m in state.list_memories(limit=400):
+            txt = (m.get("text") or "")
+            # extract the VALUES from templated facts: '… is X.' / '… named X.'
+            for part in re.split(r"\b(?:is|named|was|likes)\b", txt):
+                part = re.sub(r"^(?:the )?user(?:'s)?\s*", "",
+                              part.strip(" .;:"), flags=re.I)
+                prev = None
+                while prev != part:  # peel filler head-words until the VALUE is bare
+                    prev = part
+                    part = re.sub(r"^(?:in|at|as|is|by|on|of|the|a|an|to|has|have|lives?|"
+                                  r"named|work(?:s)?|work|favou?rite)\s+",
+                                  "", part, flags=re.I).strip()
+                if 4 <= len(part) <= 60 and part.lower() not in (
+                        "", "user", "dog", "cat", "a dog", "a cat"):
+                    toks.add(part)
+        toks.discard("")
+        return sorted(toks, key=len, reverse=True)
+    except Exception:
+        return []
+
+
+def scrub_personal(messages: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    """Drop the memory profile block entirely for cloud brains AND mask any
+    literal personal strings that snuck into conversation content."""
+    hits = 0
+    toks = _personal_tokens()
+    out: List[Dict[str, Any]] = []
+    for m in messages:
+        c = m.get("content")
+        if not isinstance(c, str):
+            out.append(m)
+            continue
+        if m.get("role") == "system":
+            # remove the whole memory block (paragraphs under the header)
+            for header in _MEM_HEADERS:
+                if header in c:
+                    before, _, after = c.partition(header)
+                    # the block runs until the next blank-line-separated section
+                    rest = after.split("\n\n", 1)
+                    c = before + (rest[1] if len(rest) == 2 else "")
+                    hits += 1
+        for t in toks:
+            if t in c:
+                c = c.replace(t, "[PRIVATE]")
+                hits += 1
+        out.append({**m, "content": c})
+    return out, hits
+
+
 def guard(provider: Any, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Apply the privacy mode to an outbound LLM payload. Raises in STRICT."""
     from . import state
@@ -86,8 +144,10 @@ def guard(provider: Any, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         )
     if mode == "guarded":
         cleaned, n = scrub_messages(messages)
+        cleaned, personal_hits = scrub_personal(cleaned)  # memory never flies
         state.audit("cloud_call", provider=getattr(provider, "name", "?"),
-                    model=getattr(provider, "model", "?"), redactions=n, detail="guarded send")
+                    model=getattr(provider, "model", "?"), redactions=n + personal_hits,
+                    detail=f"guarded send (secrets {n}, personal-facts stripped {personal_hits})")
         return cleaned
     state.audit("cloud_call", provider=getattr(provider, "name", "?"),
                 model=getattr(provider, "model", "?"), redactions=0, detail="relaxed send")
