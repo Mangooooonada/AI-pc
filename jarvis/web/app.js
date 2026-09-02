@@ -259,7 +259,9 @@ async function loadSettings() {
 
   // One-click brain presets: fill the Brain section's cloud fields for them.
   const presets = [
-    ["⚡ Groq — free cloud brain (fast)", "free key at console.groq.com",
+    ["⚡ Groq as the CASCADE-brain (free)", "Ollama stays king; Groq answers when it sulks",
+     { JARVIS_PROVIDER: "auto", OPENAI_BASE_URL: "https://api.groq.com/openai/v1", OPENAI_MODEL: "llama-3.3-70b-versatile" }],
+    ["⚡ Groq as the PRIMARY brain", "70B cloud mind answers everything (shielded)",
      { JARVIS_PROVIDER: "openai", OPENAI_BASE_URL: "https://api.groq.com/openai/v1", OPENAI_MODEL: "llama-3.3-70b-versatile" }],
     ["🧠 OpenAI — paid, top tier", "key at platform.openai.com",
      { JARVIS_PROVIDER: "openai", OPENAI_BASE_URL: "https://api.openai.com/v1", OPENAI_MODEL: "gpt-4o-mini" }],
@@ -270,6 +272,13 @@ async function loadSettings() {
   ];
   chunks.push(`<div class="st-group"><h3>BRAIN PRESETS</h3><div class="st-rows">
     ${presets.map((p, i) => `<button type="button" class="st-copy st-preset" data-preset="${i}">${p[0]}<span class="st-preset-sub">${p[1]}</span></button>`).join("")}
+    <div class="st-arm">
+      <strong>🧠 Arm the second mind in 60 seconds:</strong>
+      <a class="st-arm-link" id="groq-get">1 · get a free Groq key ↗</a>
+      <input class="st-input" id="groq-key" placeholder="2 · paste gsk_..." autocomplete="off" spellcheck="false">
+      <button type="button" id="groq-arm">3 · Test & arm</button>
+      <div class="st-note" id="groq-arm-note">Guarded shield stays on — your name, city, age and Panda never leave this PC.</div>
+    </div>
   </div><p class="st-note" style="margin-top:8px">One click rewires the Brain section below. For cloud brains, paste your key into <b>Cloud brain API key</b> after. The current brain shows in <b>AI Core</b>. Privacy guard is watching cloud traffic (Settings → Safety).</p></div>`);
 
   for (const sec of d.sections) {
@@ -344,6 +353,26 @@ async function loadSettings() {
   if (copyBtn) copyBtn.onclick = async () => {
     try { await navigator.clipboard.writeText(netState.url); toast("Link copied — open it on your phone."); }
     catch { toast(netState.url); }
+  };
+
+  const groqGet = $("#groq-get");
+  if (groqGet) groqGet.onclick = () => window.open("https://console.groq.com/keys", "_blank");
+  const groqArm = $("#groq-arm");
+  if (groqArm) groqArm.onclick = async () => {
+    const key = $("#groq-key").value.trim();
+    const note = $("#groq-arm-note");
+    if (!key) { note.textContent = "Paste the key first."; return; }
+    groqArm.disabled = true; note.textContent = "Testing the key against Groq…";
+    const r = await post("/api/providers/test_key", { api_key: key });
+    groqArm.disabled = false;
+    if (r.ok) {
+      note.textContent = `✔ Armed in ${r.latency_ms}ms — cascade brain live. Shield remains ${"guarded"}.`;
+      toast(`Groq armed — Ollama stays king, cloud covers the sulks.`);
+      $("#groq-key").value = "";
+      loadStatus(); loadSettings();
+    } else {
+      note.textContent = `✘ ${r.error || "key refused"} (nothing saved)`;
+    }
   };
 
   root.querySelectorAll(".st-preset").forEach((b) => (b.onclick = async () => {

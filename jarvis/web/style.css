@@ -575,3 +575,13 @@ body.calm .lm-r1,body.calm .lm-r2{animation:none}
 .shot-grid .shot { margin: 0; border: 1px solid #12314a; border-radius: 8px; overflow: hidden; background: #050b14; }
 .shot-grid .shot img { width: 100%; display: block; }
 .shot-grid .shot figcaption { font: 10px "Consolas", monospace; color: #4d6a82; padding: 4px 6px; }
+
+/* brain-arming card */
+.st-arm { margin: 10px 0 4px; padding: 10px 12px; border: 1px dashed #1d4361; border-radius: 9px;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.st-arm .st-arm-link { color: #3ce0ff; cursor: pointer; text-decoration: none; font-size: 12.5px; }
+.st-arm .st-input { flex: 1 1 220px; min-width: 180px; }
+.st-arm #groq-arm { background: #12a8cf; color: #012; border: 0; border-radius: 7px;
+  padding: 7px 14px; cursor: pointer; font-weight: 600; }
+.st-arm #groq-arm:hover { filter: brightness(1.15); }
+.st-arm #groq-arm:disabled { opacity: .5; cursor: wait; }

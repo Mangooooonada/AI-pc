@@ -692,6 +692,41 @@ class WatchIn(BaseModel):
     autolock: Optional[bool] = None
 
 
+class KeyTestIn(BaseModel):
+    api_key: str
+    base_url: str = "https://api.groq.com/openai/v1"
+    model: str = "llama-3.3-70b-versatile"
+
+
+@app.post("/api/providers/test_key")
+def test_provider_key(body: KeyTestIn) -> Dict[str, Any]:
+    """Prove a cloud key by actually opening the door, then save it as the
+    CASCADE brain (Ollama stays king; this is the safety net that answers
+    when Ollama sulks). Privacy mode is untouched — guarded shield applies."""
+    import time as _t
+    import requests as _req
+
+    key = (body.api_key or "").strip()
+    if not key or key.startswith(("***", "[")):
+        return {"ok": False, "error": "paste the real key"}
+    base = (body.base_url or "").rstrip("/")
+    try:
+        t0 = _t.time()
+        r = _req.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"}, timeout=8)
+        latency = int((_t.time() - t0) * 1000)
+    except Exception as exc:
+        return {"ok": False, "error": f"unreachable: {exc}"}
+    if r.status_code == 200:
+        # save WITHOUT turning the whole brain over: cascade role
+        body_up = {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": base,
+                   "OPENAI_MODEL": body.model}
+        res = update_settings(SettingsIn(updates=body_up))
+        return {"ok": True, "status": 200, "latency_ms": latency,
+                "saved": res.get("ok", False), "notes": res.get("notes", [])}
+    snippet = (r.text or "")[:120]
+    return {"ok": False, "error": f"{r.status_code}: {snippet}"}
+
+
 @app.post("/api/watch")
 def set_watch(body: WatchIn) -> Dict[str, Any]:
     from .observe import set_observer, set_shots, set_typed_log
