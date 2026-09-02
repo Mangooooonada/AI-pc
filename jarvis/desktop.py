@@ -637,10 +637,11 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
         except Exception:
             logger.exception("couldn't even show the boot-failure page")
 
+    ui_state = {"loaded": False}  # set by _handoff the moment the page paints
     if not _early_done:
         threading.Thread(target=_handoff, daemon=True).start()
     else:
-        ui_state["loaded"] = True  # about to paint straight onto the live UI
+        ui_state["loaded"] = True  # born painted: window opens on the live UI
 
     def _hard_quit() -> None:
         # Make sure the uvicorn thread doesn't keep the process alive.
@@ -675,7 +676,6 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
         except Exception:
             logger.warning("couldn't hook window event %s", evt_name)
 
-    ui_state = {"loaded": False}  # set by _handoff the moment the page paints
 
     start_kwargs = {"debug": dev}
     if ICON.exists() and not sys.platform.startswith("win"):
