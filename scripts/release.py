@@ -6,12 +6,13 @@
     python scripts/release.py major "Codename"
 
 Old releases are NEVER replaced — every tag + release stays on GitHub
-(Releases page), and each one ships a JARVIS-vX.Y.Z.zip source bundle you
-can re-download years later.
+(Releases page), and each tag serves a downloadable source snapshot you
+can re-extract years later.
 """
 from __future__ import annotations
 
-import subprocess, sys
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,29 +42,36 @@ def main() -> int:
     vf.write_text(ver + "\n")
 
     sh("git", "add", "VERSION")
-    sh("git", "commit", "-m", f"Release v{ver}" + (f' "{codename}"' if codename else ""))
-    title = f"v{ver}" + (f' — {codename}' if codename else "")
+    sh("git", "commit", "-m", f'Release v{ver}' + (f' "{codename}"' if codename else ""))
+    title = f"v{ver}" + (f" — {codename}" if codename else "")
     sh("git", "tag", "-a", f"v{ver}", "-m", title)
     sh("git", "push", "origin", "--follow-tags")
 
+    notes = (
+        f"Jarvis {ver}" + (f' "{codename}".' if codename else ".")
+        + " Extract the source zip below and double-click JARVIS.bat."
+    )
     bundle = ROOT / "dist" / f"JARVIS-v{ver}.zip"
     bundle.parent.mkdir(exist_ok=True)
     sh("git", "archive", "--output", str(bundle), "--prefix", f"JARVIS-v{ver}/", f"v{ver}")
-    sh_ = subprocess.run(  # an asset-upload hiccup must NOT kill the release
-        ["gh", "release", "create", f"v{ver}", "--title", title, "--verify-tag",
-         "--notes", f"Jarvis {ver}{f' \"{codename}\"' if codename else ''}. "
-                    "Source snapshot attached (or use the auto 'Source code zip'); "
-                    "extract and double-click JARVIS.bat.",
-         str(bundle)],
+
+    # Asset upload is best-effort: if this network blocks it, the release
+    # still ships WITHOUT the asset — GitHub auto-serves the tag's source
+    # zip on the Releases page, so old versions stay downloadable regardless.
+    attempt = subprocess.run(
+        ["gh", "release", "create", f"v{ver}", "--title", title,
+         "--verify-tag", "--notes", notes, str(bundle)],
         cwd=ROOT, capture_output=True, text=True)
-    if sh_.returncode != 0 and "release already exists" in sh_.stderr.lower():
-        sh_.returncode = 0
-    if sh_.returncode != 0:
-        # upload blocked (some networks) → release without asset; GitHub still
-        # auto-serves the tag's source zip on the Releases page.
-        sh("gh", "release", "create", f"v{ver}", "--title", title, "--verify-tag",
-           "--notes", f"Jarvis {ver}. Extract the source zip below and double-click JARVIS.bat.")
-        print(f"(asset upload failed — tag snapshot still served {sh_.stderr.strip()[:80]})")
+    if attempt.returncode != 0:
+        try:
+            sh("gh", "release", "create", f"v{ver}", "--title", title,
+               "--verify-tag", "--notes", notes)
+            print(f"(asset upload failed — the tag's auto source-zip is durable: "
+                  f"{attempt.stderr.strip()[:80]})")
+        except SystemExit:
+            # release likely already exists (retry) — nothing more to do
+            pass
+    sh("gh", "release", "edit", f"v{ver}", "--latest")
     print(f"Released {title} — old versions untouched on the Releases page.")
     return 0
 
