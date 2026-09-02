@@ -229,6 +229,8 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
         {"key": "JARVIS_OBSERVE", "attr": "observe", "label": "Observer: quietly learn my app-usage habits", "kind": "bool"},
         {"key": "JARVIS_OBSERVE_TEXT", "attr": "observe_text", "label": "Observer+: also remember typed text (auto-pauses on sign-in screens)", "kind": "bool"},
         {"key": "JARVIS_OBSERVE_SHOTS", "attr": "observe_shots", "label": "Observer+: per-minute screenshot timeline (last 60, local)", "kind": "bool"},
+        {"key": "JARVIS_AUTOLOCK", "attr": "autolock", "label": "Auto-lock the PC after idle time (with a 30s warning)", "kind": "bool"},
+        {"key": "JARVIS_AUTOLOCK_MINUTES", "attr": "autolock_minutes", "label": "Auto-lock after this many idle minutes", "kind": "number", "min": 2, "max": 120, "step": 1},
         {"key": "JARVIS_SHOT_AUTO_WIPE", "attr": "shot_auto_wipe", "label": "Screenshot timeline wipes itself on exit + every midnight", "kind": "bool"},
         {"key": "JARVIS_COMPUTER_USE", "attr": "computer_use", "label": "Computer use: Jarvis may drive mouse/keyboard (plan-approved, stoppable)", "kind": "bool"},
         {"key": "JARVIS_AUTO_MEM", "attr": "auto_mem", "label": "Auto-remember important facts you mention", "kind": "bool"},
@@ -653,7 +655,7 @@ def get_llms() -> Dict[str, Any]:
 def get_watch() -> Dict[str, Any]:
     """Proof the eyes are on: what's enabled, the live focus, the shot reel."""
     from .observe import (observer_enabled, shots_enabled, typed_log_enabled,
-                          active_window, _shots_dir)
+                          active_window, _shots_dir, autolock_enabled)
     app_name, title = observer_enabled() and active_window() or ("", "")
     shots_dir = _shots_dir()
     reels = sorted(shots_dir.glob("shot-*.png"))
@@ -662,7 +664,8 @@ def get_watch() -> Dict[str, Any]:
     activity = state.get_activity()[-14:]
     return {
         "observer": observer_enabled(), "shots_on": shots_enabled(),
-        "typed_on": typed_log_enabled(), "poll": config.observe_poll,
+        "typed_on": typed_log_enabled(), "autolock": autolock_enabled(),
+        "autolock_minutes": config.autolock_minutes, "poll": config.observe_poll,
         "shot_interval": config.shot_interval,
         "focused": {"app": app_name, "title": title},
         "activity": activity,
@@ -686,6 +689,7 @@ class WatchIn(BaseModel):
     observer: Optional[bool] = None
     shots: Optional[bool] = None
     typed: Optional[bool] = None
+    autolock: Optional[bool] = None
 
 
 @app.post("/api/watch")
@@ -697,6 +701,9 @@ def set_watch(body: WatchIn) -> Dict[str, Any]:
         set_shots(body.shots)
     if body.typed is not None:
         set_typed_log(body.typed)
+    if body.autolock is not None:
+        from .observe import set_autolock
+        set_autolock(body.autolock)
     return {"ok": True, "state": get_watch()}
 
 

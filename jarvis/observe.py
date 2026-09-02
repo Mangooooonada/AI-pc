@@ -55,6 +55,76 @@ def active_window() -> Tuple[str, str]:
         return "", ""
 
 
+# ------------------------------------------------------------- auto-lock ----
+_autolock = {"warned": False, "locked": False}
+
+
+def autolock_enabled() -> bool:
+    flag = state.get_flag("autolock", "")
+    return flag == "1" if flag else bool(config.autolock)
+
+
+def set_autolock(on: bool) -> None:
+    state.set_flag("autolock", "1" if on else "0")
+    if on:
+        state.add_notification(
+            f"🔒 Auto-lock armed — I'll lock Windows after {config.autolock_minutes} "
+            "idle minutes (30s bell warning first). Typing or mouse resets it.")
+
+
+def _last_input_secs() -> int:
+    """Seconds since the last keyboard/mouse activity. 0 where unsupported."""
+    try:
+        import sys as _sys
+        if not _sys.platform.startswith("win"):
+            return 0
+        import ctypes
+        class LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_ulong)]
+        lii = LASTINPUTINFO(); lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            return 0
+        millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+        return max(0, millis // 1000)
+    except Exception:
+        return 0
+
+
+def autolock_tick(idle_secs=None, lock_fn=None, notify_fn=None) -> bool:
+    """One beat of the walk-away guard. Returns True when it locked.
+    Injectable knobs keep the lock testable without barricading the host PC.
+    """
+    if not autolock_enabled():
+        _autolock.update(warned=False, locked=False)
+        return False
+    idle = _last_input_secs() if idle_secs is None else idle_secs
+    threshold = max(60, int(config.autolock_minutes) * 60)
+    if idle < threshold:
+        _autolock.update(warned=False, locked=_autolock["locked"] and idle > 5)
+        if idle <= 5:
+            _autolock["locked"] = False
+        return False
+    if not _autolock["warned"]:
+        _autolock["warned"] = True
+        notice = (f"🔒 Idle {idle // 60} min — locking this PC in "
+                  f"{config.autolock_warn_secs}s unless you move. (Auto-lock.)")
+        (notify_fn or state.add_notification)(notice)
+    if idle >= threshold + int(config.autolock_warn_secs) and not _autolock["locked"]:
+        _autolock["locked"] = True
+        try:
+            if lock_fn is not None:
+                lock_fn()
+            else:
+                import sys as _sys
+                if _sys.platform.startswith("win"):
+                    import ctypes
+                    ctypes.windll.user32.LockWorkStation()
+            return True
+        except Exception:
+            return False
+    return False
+
+
 def observer_enabled() -> bool:
     flag = state.get_flag("observe", "")
     if flag:
@@ -86,6 +156,7 @@ def watch_loop() -> None:
                     mine_patterns()
             else:
                 last_app, last_title = "", ""  # don't record the toggle moment
+            autolock_tick()  # independent of the observer switch
         except Exception:
             pass  # the watcher must never crash the app
         _t.sleep(max(2, int(config.observe_poll)))

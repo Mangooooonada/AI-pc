@@ -167,6 +167,9 @@ class Config:
     shot_interval: int = _int("JARVIS_OBSERVE_SHOT_INTERVAL", 60)
     shot_auto_wipe: bool = _bool("JARVIS_SHOT_AUTO_WIPE", True)  # wipe frames daily + on exit
     observe_poll: int = _int("JARVIS_OBSERVE_POLL", 4)  # seconds between samples
+    autolock: bool = _bool("JARVIS_AUTOLOCK", False)          # lock Windows when you walk away
+    autolock_minutes: int = _int("JARVIS_AUTOLOCK_MINUTES", 10)  # idle threshold
+    autolock_warn_secs: int = _int("JARVIS_AUTOLOCK_WARN", 30)   # bell warning before locking
     computer_use: bool = _bool("JARVIS_COMPUTER_USE", False)  # Jarvis may drive the GUI (plan-first)
     hotkey: bool = _bool("JARVIS_HOTKEY", True)       # Ctrl+J summons the window (Windows)
     # Share the UI on the local network (phone control). Enabling binds the

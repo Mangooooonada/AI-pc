@@ -641,7 +641,8 @@ async function loadWatch() {
   $("#watch-toggles").innerHTML =
     tgl("👁 Observer", d.observer, "observer", "remembers which apps you use, learns your hours") +
     tgl("📸 Screenshot timeline", d.shots_on, "shots", `one frame / ${d.shot_interval}s, pruned on rollover + exit`) +
-    tgl("⌨️ Typing memory", d.typed_on, "typed", "remembers text you type (auto-pauses on sign-in screens)");
+    tgl("⌨️ Typing memory", d.typed_on, "typed", "remembers text you type (auto-pauses on sign-in screens)") +
+    tgl("🔒 Auto-lock walk-away", d.autolock, "autolock", `locks Windows after ${d.autolock_minutes} idle minutes (30s warning first)`);
   $("#watch-focus").innerHTML = d.observer && d.focused?.app
     ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
        <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`

@@ -286,6 +286,10 @@ class OllamaProvider:
 
     def _best_installed(self, installed: List[str]) -> str:
         def score(m: str) -> int:
+            # Your own fine-tunes (any 'jarvis-*' name) beat every stock model:
+            # you built it for this exact job.
+            if m.lower().startswith("jarvis"):
+                return -1
             for i, pref in enumerate(self._PREFERRED):
                 if m == pref or m.startswith(pref):
                     return i
