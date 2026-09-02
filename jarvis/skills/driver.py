@@ -13,7 +13,10 @@ from . import skill
         "required": ["on"],
     },
     triggers=["start watching what i do", "start watching me", "watch what i do",
-              "watch me", "observe my activity"],
+              "watch me", "observe my activity", "watch what i am doing",
+              "watch what i am doing on my pc", "watch what i am doing on my computer",
+              "watch my pc", "watch my computer", "watch my activity",
+              "watch my screen", "watch what i'm doing", "keep an eye on what i do"],
 )
 def observer_toggle(on: bool | str = True) -> str:
     from .. import observe

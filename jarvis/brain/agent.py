@@ -205,6 +205,13 @@ class Agent:
 
             if not calls:
                 reply = content or "Done."
+                # Fallback answered because the main brain stumbled this turn —
+                # say so in one clause, or the user thinks the persona broke.
+                if error and degraded and not actions:
+                    note = (f"\n\n(That answer came from my offline engine — "
+                            f"the main brain stumbled: {str(error)[:90]}. "
+                            "Qwen/Ollama may be reloading; ask again if it reads flat.)")
+                    reply = (reply + note) if len(reply) + len(note) < 1900 else reply
                 # Brain died on the post-tool recap (error set, actions exist):
                 # the stand-in/offline text is context-free junk — show the
                 # actual tool results instead of pretending nothing happened.

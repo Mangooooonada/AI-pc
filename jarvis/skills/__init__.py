@@ -152,6 +152,10 @@ def looks_like_math(text: str) -> bool:
     return bool(re.search(r"[\d\s]+[-+*/^x%]|\bpercent\b|% of |\bplus\b|\bminus\b|\btimes\b|\bdivided by\b", t))
 
 
+_FILLER_TAIL = {"today", "please", "now", "tonight", "again", "right", "this",
+                "morning", "evening", "afternoon", "for", "me", "sir", "jarvis"}
+
+
 def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
     """Very small intent matcher used when no LLM is available.
 
@@ -175,12 +179,24 @@ def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
                     pattern += re.escape(part)
                     literal += len(part.strip())
             m = re.search(pattern + r"\s*$", low) or re.fullmatch(pattern, low)
+            args: Dict[str, Any] = {}
+            start = m.start() if m else 0
+            if not m and "{" not in trig:
+                # Paramless trigger with a harmless trailing filler?
+                # "what is the news today" should still hit the "news" skill.
+                norm = normalize(trigger)
+                if low.startswith(norm + " "):
+                    tail = low[len(norm):].strip().split()
+                    if len(tail) <= 3 and all(w in _FILLER_TAIL for w in tail):
+                        m = True  # synthetic: exact-literal match, no args
+                        start = 0
             if not m:
                 continue
-            args = {k: v.strip(" ?.!,") for k, v in (m.groupdict() or {}).items() if v}
+            if m is not True:
+                args = {k: v.strip(" ?.!,") for k, v in (m.groupdict() or {}).items() if v}
             # Rank by how much literal trigger text was matched, then by how
             # early in the sentence the trigger starts.
-            score = (literal, -m.start())
+            score = (literal, -start)
             if best is None or score > best[0]:
                 best = (score, sk.name, args)
     if best:

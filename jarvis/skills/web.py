@@ -180,7 +180,9 @@ def get_weather(city: str = "") -> str:
         "type": "object",
         "properties": {"topic": {"type": "string", "description": "Optional topic"}},
     },
-    triggers=["what's the news", "give me the news", "news about {topic}", "headlines"],
+    triggers=["what's the news", "give me the news", "news about {topic}", "headlines",
+              "what is the news", "tell me the news", "latest news", "news today",
+              "today\"s news", "any news", "get me the news", "news", "headlines", "today\u2019s news"],
 )
 def get_news(topic: str = "") -> str:
     import re
