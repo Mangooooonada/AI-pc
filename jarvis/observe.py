@@ -80,6 +80,7 @@ def watch_loop() -> None:
                 if app and (app, title) != (last_app, last_title):
                     state.add_activity(app, title)
                     last_app, last_title = app, title
+                tick_observer()
                 if _t.time() - last_mine > 600:
                     last_mine = _t.time()
                     mine_patterns()
@@ -193,3 +194,164 @@ def today_summary() -> str:
         first = last = "?"
     return (f"Today ({first} → {last}), your most-visited apps: {names}. "
             f"{len(seen)} switches observed.")
+
+
+# ------------------------------------------------------- typed text --------
+_SENSITIVE_TITLES = ("password", "sign in", "log in", "credential", "passphrase",
+                     "bank", "payment", "credit card", "pin", "unlock")
+
+_kl: Dict[str, Any] = {"buf": [], "app": "", "last": 0.0, "started": False,
+                       "missing_note": False}
+_shots = {"last": 0.0, "warned": False}
+_SHOT_KEEP = 60
+
+
+def typed_log_enabled() -> bool:
+    flag = state.get_flag("observe_text", "")
+    return flag == "1" if flag else bool(config.observe_text)
+
+
+def set_typed_log(on: bool) -> None:
+    state.set_flag("observe_text", "1" if on else "0")
+    if on:
+        state.add_notification("⌨️ Typing-log on — I now remember what you type "
+                               "(paused automatically on sign-in/payment screens). "
+                               "It's local-only; 'stop logging my typing' to end it.")
+    else:
+        _flush_typed()
+
+
+def shots_enabled() -> bool:
+    flag = state.get_flag("observe_shots", "")
+    return flag == "1" if flag else bool(config.observe_shots)
+
+
+def set_shots(on: bool) -> None:
+    state.set_flag("observe_shots", "1" if on else "0")
+    if on:
+        state.add_notification("📸 Screenshot timeline on — one frame per minute, "
+                               "last 60 kept, local-only. 'stop the screenshots' to end.")
+
+
+def _sensitive_now() -> bool:
+    app, title = active_window()
+    low = f"{app} {title}".lower()
+    return any(w in low for w in _SENSITIVE_TITLES)
+
+
+def _flush_typed() -> None:
+    import time as _t
+    buf = _kl["buf"]
+    if not buf:
+        return
+    text = "".join(buf).strip()
+    _kl["buf"] = []
+    if text:
+        state.add_typed(_kl.get("app", ""), text)
+    _kl["last"] = _t.time()
+
+
+def _on_key(key) -> None:
+    """pynput callback: accumulate printable text; commit on Enter."""
+    import time as _t
+    if not typed_log_enabled():
+        return
+    app, title = active_window()
+    low = f"{app} {title}".lower()
+    if any(w in low for w in _SENSITIVE_TITLES):
+        _kl["buf"] = []
+        _kl["last"] = _t.time()
+        return
+    _kl["app"] = app
+    _kl["last"] = _t.time()
+    try:
+        ch = key.char            # printable key
+        if ch:
+            _kl["buf"].append(ch)
+            return
+    except AttributeError:
+        pass
+    name = str(key)
+    if name.endswith("backspace"):
+        if _kl["buf"]:
+            _kl["buf"].pop()
+    elif name.endswith(("enter", "tab")) or "enter" in name or "tab" in name:
+        _flush_typed()
+    elif name.endswith("space"):
+        _kl["buf"].append(" ")
+    # other keys (shift/ctrl/arrows): ignored entirely
+
+
+def ensure_keyboard_listener() -> bool:
+    """Start pynput once (lazy). False if pynput missing — notes it once."""
+    if _kl["started"]:
+        return True
+    try:
+        from pynput import keyboard  # type: ignore
+    except Exception:
+        if not _kl["missing_note"]:
+            _kl["missing_note"] = True
+            state.add_notification("⌨️ Typing-log needs one package: pip install pynput")
+        return False
+    _kl["started"] = True
+
+    def _loop() -> None:
+        with keyboard.Listener(on_press=_on_key) as listener:
+            listener.join()
+
+    threading.Thread(target=_loop, daemon=True, name="jarvis-keys").start()
+    return True
+
+
+# ------------------------------------------------------- screenshots -------
+def _shots_dir():
+    d = config.workspace / "observer-shots"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _take_observation_shot() -> None:
+    try:
+        from PIL import ImageGrab  # type: ignore
+        img = ImageGrab.grab()
+        img.thumbnail((1600, 900))
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        img.save(_shots_dir() / f"shot-{stamp}.png", optimize=True)
+        shots = sorted(_shots_dir().glob("shot-*.png"))
+        for old in shots[: max(0, len(shots) - _SHOT_KEEP)]:
+            old.unlink(missing_ok=True)
+    except Exception as exc:
+        if not _shots["warned"]:
+            _shots["warned"] = True
+            state.add_notification(f"📸 Screenshot timeline couldn't run: {exc}")
+
+
+def tick_observer() -> None:
+    """Called from watch_loop each cycle: keyboard listener + shot cadence
+    + idle flush of the typing buffer."""
+    import time as _t
+    if typed_log_enabled():
+        if ensure_keyboard_listener():
+            # idle flush: untouched buffer older than 8s becomes a record
+            if _kl["buf"] and _t.time() - _kl["last"] > 8:
+                _flush_typed()
+    if shots_enabled():
+        interval = max(20, int(config.shot_interval))
+        if _t.time() - _shots["last"] >= interval:
+            _shots["last"] = _t.time()
+            _take_observation_shot()
+
+
+def typed_recall(limit: int = 12) -> str:
+    rows = state.get_typed(limit)[-limit:]
+    if not rows:
+        return ("No typed-text log yet. Say 'log what I type' to enable it — "
+                "it auto-pauses on sign-in/payment screens.")
+    lines = [f"Your last {len(rows)} typed entries (local-only):"]
+    for r in rows:
+        try:
+            hh = datetime.fromisoformat(r["at"]).strftime("%H:%M")
+        except Exception:
+            hh = "?"
+        lines.append(f"  {hh}  [{r['app'] or '?'}] {r['text'][:110]}")
+    return "\n".join(lines)

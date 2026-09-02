@@ -162,6 +162,9 @@ class Config:
     auto_mem: bool = _bool("JARVIS_AUTO_MEM", True)     # quietly save important personal facts   # morning briefing on first launch of the day
     tray: bool = _bool("JARVIS_TRAY", True)           # close → system tray instead of quitting
     observe: bool = _bool("JARVIS_OBSERVE", False)    # watch active-app history to learn habits
+    observe_text: bool = _bool("JARVIS_OBSERVE_TEXT", False)  # ALSO record typed text (local-only)
+    observe_shots: bool = _bool("JARVIS_OBSERVE_SHOTS", False)  # ALSO screenshot each minute
+    shot_interval: int = _int("JARVIS_OBSERVE_SHOT_INTERVAL", 60)
     observe_poll: int = _int("JARVIS_OBSERVE_POLL", 4)  # seconds between samples
     computer_use: bool = _bool("JARVIS_COMPUTER_USE", False)  # Jarvis may drive the GUI (plan-first)
     hotkey: bool = _bool("JARVIS_HOTKEY", True)       # Ctrl+J summons the window (Windows)

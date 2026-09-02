@@ -568,3 +568,29 @@ def set_pattern_status(key: str, status: str) -> bool:
                 save()
                 return True
     return False
+
+
+def add_typed(app: str, text: str, at: str = "") -> None:
+    """Store one typed phrase. Redacts API-key-shaped secrets on the way IN."""
+    from .privacy import redact
+    text, _ = redact(text)
+    text = text.strip()
+    if not text:
+        return
+    with _LOCK:
+        _STATE["typed"].append({"at": at or _now(), "app": (app or "")[:80],
+                                "text": text[:240]})
+        if len(_STATE["typed"]) > 3000:
+            _STATE["typed"] = _STATE["typed"][-3000:]
+    save()
+
+
+def get_typed(limit: int = 3000) -> List[Dict[str, Any]]:
+    with _LOCK:
+        return list(_STATE["typed"][-limit:])
+
+
+def clear_typed() -> None:
+    with _LOCK:
+        _STATE["typed"] = []
+    save()

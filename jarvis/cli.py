@@ -125,6 +125,11 @@ def voice_loop(agent: Agent) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        from .crashlog import enable as _crashlog
+        _crashlog()
+    except Exception:
+        pass
     argv = argv if argv is not None else sys.argv[1:]
     speak_replies = "--speak" in argv
     provider = None

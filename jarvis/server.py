@@ -226,7 +226,9 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
     ]},
     {"section": "Resident Assistant", "blurb": "Always-on behaviours. Autostart, always-listen and spoken-reply toggles are in the App card above.", "fields": [
         {"key": "JARVIS_TRAY", "attr": "tray", "label": "Close button tucks Jarvis into the system tray", "kind": "bool"},
-        {"key": "JARVIS_OBSERVE", "attr": "observe", "label": "Observer: quietly learn my app-usage habits (never keystrokes)", "kind": "bool"},
+        {"key": "JARVIS_OBSERVE", "attr": "observe", "label": "Observer: quietly learn my app-usage habits", "kind": "bool"},
+        {"key": "JARVIS_OBSERVE_TEXT", "attr": "observe_text", "label": "Observer+: also remember typed text (auto-pauses on sign-in screens)", "kind": "bool"},
+        {"key": "JARVIS_OBSERVE_SHOTS", "attr": "observe_shots", "label": "Observer+: per-minute screenshot timeline (last 60, local)", "kind": "bool"},
         {"key": "JARVIS_COMPUTER_USE", "attr": "computer_use", "label": "Computer use: Jarvis may drive mouse/keyboard (plan-approved, stoppable)", "kind": "bool"},
         {"key": "JARVIS_AUTO_MEM", "attr": "auto_mem", "label": "Auto-remember important facts you mention", "kind": "bool"},
         {"key": "JARVIS_BRIEFING", "attr": "briefing", "label": "Morning briefing on first launch of the day", "kind": "bool"},
@@ -874,6 +876,12 @@ else:  # pragma: no cover
 
 def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     import uvicorn
+
+    try:  # native crashes (audio/WebView2) leave a readable stack here
+        from .crashlog import enable as _crashlog
+        _crashlog()
+    except Exception:
+        pass
 
     global _watcher_started
     if not _watcher_started:

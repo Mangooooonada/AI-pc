@@ -164,3 +164,99 @@ def learn_habit() -> str:
 )
 def ignore_habit() -> str:
     return _decide_newest(False)
+
+
+@skill(
+    "typing_log_toggle",
+    "Turn the typed-text log on/off (observer upgrade: remembers what you type; auto-pauses on sign-in/payment screens; local-only).",
+    {
+        "type": "object",
+        "properties": {"on": {"type": "boolean", "description": "True to log typing, false to stop"}},
+        "required": ["on"],
+    },
+    triggers=["log what i type", "also log what i type", "start logging my typing",
+              "remember what i type"],
+)
+def typing_log_toggle(on: bool | str = True) -> str:
+    from .. import observe
+    want = str(on).strip().lower() not in ("false", "0", "off", "no")
+    observe.set_typed_log(want)
+    if want:
+        return ("Typing-log on. I'll remember phrases you type (per app, with "
+                "times) — auto-paused whenever the focused window smells like a "
+                "sign-in or payment screen. Ask 'what did I type' anytime, "
+                "'stop logging my typing' to end it.")
+    return "Typing-log off. The existing log stays local; 'clear my typing log' wipes it."
+
+
+@skill(
+    "typing_log_off",
+    "Stop the typed-text log immediately.",
+    {"type": "object", "properties": {}, "required": []},
+    triggers=["stop logging my typing", "stop logging what i type", "don't log my typing",
+              "typing log off"],
+)
+def typing_log_off() -> str:
+    from .. import observe
+    observe.set_typed_log(False)
+    return "Typing-log off — the buffer flushed. 'clear my typing log' wipes history."
+
+
+@skill(
+    "clear_typing_log",
+    "Wipe the entire typed-text log from local state.",
+    {"type": "object", "properties": {}, "required": []},
+    triggers=["clear my typing log", "wipe my typing log", "delete my typing log",
+              "forget what i typed"],
+)
+def clear_typing_log() -> str:
+    from .. import state
+    state.clear_typed()
+    return "Typing log wiped clean."
+
+
+@skill(
+    "typed_recall",
+    "Show the most recent typed-text entries the observer logged.",
+    {"type": "object", "properties": {}, "required": []},
+    triggers=["what did i type", "what was i typing", "show my typing log",
+              "what have i typed"],
+)
+def typed_recall_skill() -> str:
+    from .. import observe
+    return observe.typed_recall()
+
+
+@skill(
+    "observation_shots_toggle",
+    "Turn the per-minute screenshot timeline on/off (observer upgrade). Keeps the last 60 frames, local-only.",
+    {
+        "type": "object",
+        "properties": {"on": {"type": "boolean"}},
+        "required": ["on"],
+    },
+    triggers=["also take screenshots", "capture screenshots while watching",
+              "start the screenshot timeline", "screenshot my screen every minute"],
+)
+def observation_shots_toggle(on: bool | str = True) -> str:
+    from .. import observe
+    want = str(on).strip().lower() not in ("false", "0", "off", "no")
+    observe.set_shots(want)
+    if want:
+        return ("Screenshot timeline on — one frame a minute, last 60 kept, "
+                "stored under your workspace in observer-shots/. 'stop the "
+                "screenshots' to end.")
+    return "Screenshot timeline off. Frames already on disk stay put until you delete the observer-shots folder."
+
+
+@skill(
+    "observation_shots_off",
+    "Stop the per-minute screenshot timeline.",
+    {"type": "object", "properties": {}, "required": []},
+    triggers=["stop the screenshots", "stop taking screenshots", "screenshots off",
+              "no more screenshots"],
+)
+def observation_shots_off() -> str:
+    from .. import observe
+    observe.set_shots(False)
+    return "Screenshot timeline off."

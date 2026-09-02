@@ -219,8 +219,16 @@ and he stops talking and starts listening. No more waiting out a monologue.
 Two opt-in superpowers, both **off by default**:
 
 1. **Observer** — say *"start watching what I do"* and Jarvis quietly logs
-   which apps you use and when (app-switch events only — **never keystrokes,
-   never text, never screenshots in the log**; capped, local, wipeable).
+   which apps you use and when (app-switch events only; capped, local,
+   wipeable). Two deeper levels exist for when you want Jarvis to truly
+   study you: **"log what I type"** records typed phrases (it red-a-ct…
+   redacts anything key-shaped on the way in and pauses entirely on
+   sign-in/payment screens; needs `pip install pynput`), and **"also take
+   screenshots"** keeps a one-frame-per-minute timeline (last 60) for vision
+   recall. ⚠️ The typing log is your crown jewels — it never leaves the PC,
+   the training exporter never reads it, and it's plain text in your
+   workspace; anyone with file access to this machine can read it. Toggle or
+   wipe it anytime ("stop logging my typing", "clear my typing log").
    When the same ritual shows up on several different days around the same
    hour — Outlook then Teams then Spotify at 8:55 — you get a 🧠 nudge:
    *"I spotted a habit…"* Say **"review my habits"** then **"learn it"** and it
@@ -347,6 +355,7 @@ A keyword engine maps plain phrases straight onto skills. No chat, but every com
 | **Google** | "google status", "what's on my google calendar", "check my gmail" |
 | **Self-training** | "is my PC ready for training", "export my training data" → `training/README.md` |
 | **Observer** | "start watching what I do", "what was I doing today", "review my habits", "learn it" |
+| **Observer+** | "log what I type", "what did I type", "clear my typing log", "also take screenshots" |
 | **Computer use** | "take control and open notepad", "execute the plan", "stop the computer" |
 | **System** | "system status", "list processes by memory", "empty the recycle bin" |
 | **Power** | "lock the computer", "sleep", "shut down in 60 seconds", "cancel shutdown" |
@@ -410,7 +419,9 @@ Everything else lives in `.env` (copy from `.env.example`):
 | `JARVIS_WORKSPACE` | `~/JarvisFiles` | Notes, screenshots and saved state |
 | `JARVIS_DOCS_DIR` | `<workspace>/docs` | Folder the "ask my documents" skill searches |
 | `JARVIS_GOOGLE_CREDENTIALS` | `credentials.json` (auto-found) | Google OAuth Desktop client JSON for Calendar/Gmail |
-| `JARVIS_OBSERVE` | `false` | Observer: learn app-usage habits (app switches only, never keys) |
+| `JARVIS_OBSERVE` | `false` | Observer: learn app-usage habits (app switches only) |
+| `JARVIS_OBSERVE_TEXT` | `false` | Observer+: remember typed phrases (sign-in screens auto-pause it) |
+| `JARVIS_OBSERVE_SHOTS` | `false` | Observer+: one screenshot/minute timeline, last 60 kept |
 | `JARVIS_COMPUTER_USE` | `false` | Let Jarvis drive mouse/keyboard after plan approval |
 
 ---
