@@ -243,8 +243,13 @@ class Bridge:
         return True
 
 
-def _browser_fallback(port: int, reason: str) -> int:
+def _browser_fallback(port: int, reason: str, window=None) -> int:
     """Last resort: serve the UI and open it in the default browser."""
+    if window is not None:
+        try:
+            window.destroy()  # never leave a dead app window beside the tab
+        except Exception:
+            pass
     url = f"http://127.0.0.1:{port}"
     _explain_fallback(reason, url)
     if _wait_for_server(port):  # backend thread may still be warming up
@@ -623,11 +628,11 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
         # user the browser UI instead.
         if not ui_state["loaded"]:
             logger.warning("webview window never loaded its UI (silent WebView2 death)")
-            return _browser_fallback(port, "WebView2 window vanished during init")
+            return _browser_fallback(port, "WebView2 window vanished during init", window=window)
         return 0
     except Exception as exc:
         logger.exception("webview.start failed (backend=%s)", gui or "auto")
-        return _browser_fallback(port, f"{type(exc).__name__}: {exc}")
+        return _browser_fallback(port, f"{type(exc).__name__}: {exc}", window=window)
 
 
 if __name__ == "__main__":

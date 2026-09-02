@@ -294,8 +294,11 @@ _AUTOSTART_NAME = "JarvisAI"
 
 
 def _autostart_cmd() -> str:
-    bat = Path(__file__).resolve().parent.parent / "JARVIS.bat"
-    return f'"{bat}" --minimized'
+    # pythonw.exe directly (NOT the .bat): launching a batch file at login
+    # pops a console window next to the app — two windows for one program.
+    root = Path(__file__).resolve().parent.parent
+    pythonw = root / ".venv" / "Scripts" / "pythonw.exe"
+    return f'"{pythonw}" "{root / "main.py"}" --minimized'
 
 
 def _autostart_enabled() -> Optional[bool]:
