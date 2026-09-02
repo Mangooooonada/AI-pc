@@ -45,7 +45,7 @@ def main() -> int:
     sh("git", "commit", "-m", f'Release v{ver}' + (f' "{codename}"' if codename else ""))
     title = f"v{ver}" + (f" — {codename}" if codename else "")
     sh("git", "tag", "-a", f"v{ver}", "-m", title)
-    sh("git", "push", "origin", "--follow-tags")
+    sh("git", "push", "origin", "HEAD", "--follow-tags")  # push THIS branch + tags
 
     notes = (
         f"Jarvis {ver}" + (f' "{codename}".' if codename else ".")
