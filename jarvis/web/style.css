@@ -533,3 +533,22 @@ body.calm .lm-r1,body.calm .lm-r2{animation:none}
   opacity: .55; text-align: right; user-select: none;
 }
 .prov-chip.warn { color: #f0b35c; opacity: .9; }
+
+/* notification center popover */
+#notif-panel {
+  position: fixed; top: 64px; right: 118px; width: 360px; max-height: 60vh;
+  overflow-y: auto; background: rgba(8, 14, 24, 0.97); border: 1px solid #1a3550;
+  border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.6); z-index: 900;
+  display: none; padding: 10px 12px; backdrop-filter: blur(6px);
+}
+#notif-panel.open { display: block; }
+#notif-panel .np-head { display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px; color: #7fd4ff; font-size: 13px; }
+#notif-panel .np-clear { background: none; border: 1px solid #1a3550; color: #7fd4ff;
+  border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 11px; }
+#notif-panel .np-clear:hover { background: #123; }
+#notif-panel .np-item { padding: 7px 4px; border-top: 1px solid #122336; font-size: 12.5px;
+  color: #c8d8e8; line-height: 1.45; }
+#notif-panel .np-item.unread { color: #fff; }
+#notif-panel .np-item.unread::before { content: "●"; color: #27a0e0; margin-right: 6px; font-size: 9px; }
+#notif-panel .np-when { color: #4d6a82; margin-right: 8px; font-size: 11px; }

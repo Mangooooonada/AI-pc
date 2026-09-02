@@ -389,6 +389,62 @@ function buildNav() {
   $$(".nav-item").forEach((b) => (b.onclick = () => go(b.dataset.view)));
 }
 
+/* ── notification center (the bell actually does something now) ── */
+let NOTIFS = [];
+try { NOTIFS = JSON.parse(localStorage.getItem("jarvis.notifs") || "[]"); } catch {}
+let NOTIF_UNREAD = NOTIFS.filter(n => !n.read).length;
+
+function fmtWhen(at) {
+  const d = at ? new Date(at) : new Date();
+  return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function pushNotif(text, at = "") {
+  NOTIFS.unshift({ text, at: at || new Date().toISOString(), read: false });
+  NOTIFS = NOTIFS.slice(0, 50);
+  localStorage.setItem("jarvis.notifs", JSON.stringify(NOTIFS));
+  NOTIF_UNREAD++;
+  paintNotifBadge();
+}
+function paintNotifBadge() {
+  const b = $("#feed-badge");
+  b.textContent = NOTIF_UNREAD;
+  b.hidden = NOTIF_UNREAD === 0;
+}
+function renderNotifPanel() {
+  const el = $("#notif-panel");
+  if (!el) return;
+  el.innerHTML =
+    '<div class="np-head"><strong>Notifications</strong>' +
+    '<button class="np-clear" id="np-clear">Mark all read</button></div>' +
+    (NOTIFS.length
+      ? NOTIFS.map((n) =>
+          `<div class="np-item${n.read ? "" : " unread"}"><span class="np-when">${fmtWhen(n.at)}</span>${esc(n.text)}</div>`
+        ).join("")
+      : '<div class="np-item">Nothing yet — routines, reminders and brain events land here.</div>');
+  const clear = $("#np-clear");
+  if (clear) clear.onclick = () => {
+    NOTIFS.forEach((n) => (n.read = true));
+    NOTIF_UNREAD = 0;
+    localStorage.setItem("jarvis.notifs", JSON.stringify(NOTIFS));
+    paintNotifBadge(); renderNotifPanel();
+  };
+}
+function toggleNotifPanel(force) {
+  let el = $("#notif-panel");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "notif-panel";
+    document.body.appendChild(el);
+    document.addEventListener("click", (e) => {
+      if (!el.contains(e.target) && e.target.closest("#btn-bell") === null)
+        el.classList.remove("open");
+    });
+  }
+  const show = force !== undefined ? force : !el.classList.contains("open");
+  el.classList.toggle("open", show);
+  if (show) renderNotifPanel();
+}
+
 function go(view) {
   $$(".nav-item").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
   $$(".view").forEach((v) => v.classList.toggle("active", v.dataset.view === view));
@@ -559,6 +615,7 @@ async function loadStatus() {
   (STATUS.alerts || []).forEach((a) => {
     toast(`🔔 ${a.text}`, "good");
     if (SPEAK_BACK) say(a.text);
+    pushNotif(a.text, a.at || "");
   });
   $("#core-version").textContent = "v" + STATUS.version;
   $("#op-role").textContent = STATUS.user_title || "Commander";
@@ -1131,7 +1188,8 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
   $("#mic-sm").onclick = toggleMic;
   $("#talk-bar").onclick = toggleMic;
   $("#btn-grid").onclick = () => go("command");
-  $("#btn-bell").onclick = () => { go("command"); loadFeed(); };
+  $("#btn-bell").onclick = (e) => { e.stopPropagation(); toggleNotifPanel(); };
+  paintNotifBadge();
   $("#btn-settings").onclick = () => go("settings");
   $("#settings-studio").onclick = () => go("studio");
   $("#brief-btn").onclick = () => sendMessage("executive briefing", true);

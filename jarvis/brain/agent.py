@@ -161,12 +161,9 @@ class Agent:
 
         for _ in range(MAX_TOOL_ROUNDS):
             prompt = system_prompt()
-            if hidden_tools:
-                prompt += (
-                    f"\nNote: {hidden_tools} less-relevant skills are hidden this turn to keep you "
-                    "fast. If none of the listed tools fit, just say you cannot and suggest the user "
-                    "phrase it as a short command — the right skill appears on the next turn."
-                )
+            # NOTE: no "hidden tools" hint — telling the model skills are hidden
+            # made it parrot "I cannot perform that action" on requests the pack
+            # covered. The offline engine is the literal last line, not the LLM.
             messages = [{"role": "system", "content": prompt}] + self.history
             from ..privacy import guard as _privacy_guard
             _resolved = (self.provider.resolve(messages)
