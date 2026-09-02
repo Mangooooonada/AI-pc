@@ -132,17 +132,52 @@ class OpenAIProvider:
         self.model = config.openai_model
         self.base = config.openai_base_url.rstrip("/")
 
-    def chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
-        import requests
+    _BAD_MODEL_MARKERS = ("model_not_found", "does not exist", "no such model")
 
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": config.temperature,
-        }
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+    def _heal_model(self) -> Optional[str]:
+        """The cloud retired our configured model (llama-3.3-70b-versatile died
+        in 2026 — Groq rotates names). Pull TODAY's live list, adopt the best
+        one, persist it, so tonight's 'no AI works' can't repeat."""
+        import requests, re
+        try:
+            r = requests.get(f"{self.base}/models",
+                             headers={"Authorization": f"Bearer {config.openai_api_key}"},
+                             timeout=10)
+            ids = [m.get("id", "") for m in r.json().get("data", [])]
+        except Exception:
+            return None
+        ids = [i for i in ids if i and "whisper" not in i and "guard" not in i
+               and "tts" not in i]
+        if not ids:
+            return None
+
+        def score(mid: str) -> tuple:
+            m = re.search(r"-(\d+)(b|x)", mid.lower())
+            size = int(m.group(1)) if m else 0
+            fam = 2 if "llama" in mid.lower() else 1 if "mixtral" in mid.lower() else 0
+            new = 1 if "versatile" in mid.lower() or "instruct" in mid.lower() else 0
+            return (size, fam, new)
+
+        pick = max(ids, key=score)
+        old = self.model
+        self.model = pick
+        try:
+            config.openai_model = pick
+            from ..config import update_env_file
+            update_env_file({"OPENAI_MODEL": pick})
+        except Exception:
+            pass
+        try:
+            from .. import state
+            state.add_notification(
+                f"🩹 Cloud retired the model '{old}' — swapped to '{pick}' and saved it. "
+                "No action needed.")
+        except Exception:
+            pass
+        return pick
+
+    def _post(self, payload: Dict[str, Any], stream: bool = False):
+        import requests
         r = requests.post(
             f"{self.base}/chat/completions",
             headers={
@@ -151,14 +186,43 @@ class OpenAIProvider:
             },
             json=payload,
             timeout=90,
+            stream=stream,
         )
         if r.status_code == 401:
             poison("openai", "invalid API key (401)")
             raise ProviderError("OpenAI rejected the API key (401).")
+        if r.status_code == 404 and any(m in (r.text or "").lower() for m in self._BAD_MODEL_MARKERS):
+            healed = self._heal_model()
+            if healed:
+                payload = {**payload, "model": healed}
+                r = requests.post(
+                    f"{self.base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {config.openai_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload, timeout=90, stream=stream)
+            else:
+                raise ProviderError(f"Cloud says model is gone and lists nothing else: {r.text[:160]}")
+        if r.status_code == 401:
+            poison("openai", "invalid API key (401)")
+            raise ProviderError("OpenAI rejected the API key (401) after model healing.")
         if r.status_code == 429:
             raise ProviderError("OpenAI rate limit or quota exceeded (429).")
         if r.status_code >= 400:
             raise ProviderError(f"OpenAI error {r.status_code}: {r.text[:200]}")
+        return r
+
+    def chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": config.temperature,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        r = self._post(payload)
         msg = r.json()["choices"][0]["message"]
         calls = [
             {
@@ -184,18 +248,7 @@ class OpenAIProvider:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        r = requests.post(
-            f"{self.base}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {config.openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=90,
-            stream=True,
-        )
-        if r.status_code >= 400:
-            raise ProviderError(f"OpenAI error {r.status_code}: {r.text[:200]}")
+        r = self._post(payload, stream=True)
 
         content_parts: List[str] = []
         tool_acc: Dict[int, Dict[str, Any]] = {}
