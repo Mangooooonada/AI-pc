@@ -28,6 +28,7 @@ import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -82,6 +83,73 @@ def _wait_for_server(port: int, timeout: float = 25.0) -> bool:
         except OSError:
             time.sleep(0.15)
     return False
+
+
+_INSTANCE_LOCK = None  # holds the singleton until process exit
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        if sys.platform.startswith("win"):
+            import ctypes
+            h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED
+            if not h:
+                return False
+            ctypes.windll.kernel32.CloseHandle(h)
+            return True
+        import os as _os
+        _os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _hard_kill(pid: int) -> None:
+    try:
+        if sys.platform.startswith("win"):
+            import subprocess
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                           capture_output=True, timeout=8)
+        else:
+            import os as _os, signal as _sig
+            _os.kill(pid, _sig.SIGTERM)
+        time.sleep(1.2)
+        if _pid_alive(pid):
+            if not sys.platform.startswith("win"):
+                import os as _os, signal as _sig
+                _os.kill(pid, _sig.SIGKILL)
+    except Exception as exc:
+        logger.warning("singleton kill of pid %s failed: %s", pid, exc)
+
+
+def _take_singleton() -> None:
+    """ONE Jarvis, ever. The user's log showed stacked zombies (two runs,
+    hotkey 'already taken by another app' — that app was Jarvis #1). Port-sniffing
+    missed them when the zombie owned a non-default port. A lockfile is rude
+    and effective: if the recorded pid lives, it dies, then we take the seat."""
+    global _INSTANCE_LOCK
+    lock = config.workspace / ".jarvis.lock"
+    if lock.exists():
+        try:
+            data = __import__("json").loads(lock.read_text(encoding="utf-8"))
+            old_pid = int(data.get("pid", 0))
+        except Exception:
+            old_pid = 0
+        if old_pid and old_pid != os.getpid() and _pid_alive(old_pid):
+            logger.info("a previous Jarvis instance (pid %s) is alive — retiring it", old_pid)
+            _hard_kill(old_pid)
+            deadline = time.time() + 8
+            while time.time() < deadline and _pid_alive(old_pid):
+                time.sleep(0.4)
+    try:
+        lock.write_text(__import__("json").dumps(
+            {"pid": os.getpid(), "started": datetime.now().isoformat(timespec="seconds")}),
+            encoding="utf-8")
+        _INSTANCE_LOCK = lock
+    except Exception as exc:
+        logger.warning("couldn't write the singleton lock: %s", exc)
 
 
 def _backend_alive(port: int, timeout: float = 0.8) -> bool:
@@ -442,6 +510,7 @@ def _start_hotkey(window) -> None:
 def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False,
         start_minimized: bool = False) -> int:
     _init_logging()
+    _take_singleton()  # one seat, one Jarvis — zombies die here
     _ensure_ollama_running()
 
     try:
