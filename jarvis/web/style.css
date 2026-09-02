@@ -526,3 +526,10 @@ body.calm .lm-r1,body.calm .lm-r2{animation:none}
     "tl tl tl qk qk qk" "mo mo mo me me me" "ll ll ll ll ll ll";height:auto}
   .split{grid-template-columns:1fr}
 }
+
+/* via-{provider} chip under bot replies — which brain actually answered */
+.prov-chip {
+  margin-top: 6px; font: 10px/1.4 "Consolas", monospace; letter-spacing: .08em;
+  opacity: .55; text-align: right; user-select: none;
+}
+.prov-chip.warn { color: #f0b35c; opacity: .9; }

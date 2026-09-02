@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -143,6 +144,20 @@ class Agent:
         tools, hidden_tools = pack_tools(text)
         error: Optional[str] = None
         degraded = False  # real brain failed this turn → offline stand-in
+        nudge_at: Optional[int] = None  # refusal-retry: history index of the nudge block
+        nudged_once = False  # one nudge per turn, then its answer stands
+
+        _REFUSAL_RX = re.compile(
+            r"(i'm afraid i (?:can't|cannot|won't be able)|i can't (?:fetch|access|write|compose|"
+            r"create|check|search)|i cannot (?:access|fetch|write|search|browse)|i'm unable to "
+            r"(?:access|fetch|connect|browse|search)|i don't have (?:internet|access to "
+            r"(?:the )?internet|the ability)|please open .+manually)", re.I)
+
+        def _drop_nudge() -> None:
+            nonlocal nudge_at
+            if nudge_at is not None:
+                del self.history[nudge_at:]
+                nudge_at = None
 
         for _ in range(MAX_TOOL_ROUNDS):
             prompt = system_prompt()
@@ -164,6 +179,7 @@ class Agent:
                 else:
                     result = self.provider.chat(messages, tools)
             except ProviderError as exc:
+                _drop_nudge()
                 error = str(exc)
                 degraded = True
                 # Stand in with the offline brain for THIS turn only, keeping
@@ -192,6 +208,7 @@ class Agent:
                     return Turn(reply=reply, actions=actions,
                                 provider="offline", error=error)
             except Exception as exc:  # network blips etc.
+                _drop_nudge()
                 error = f"{type(exc).__name__}: {exc}"
                 return Turn(
                     reply=f"My connection to the model dropped, {config.user_title}. ({error})",
@@ -205,6 +222,20 @@ class Agent:
 
             if not calls:
                 reply = content or "Done."
+                _drop_nudge()
+                # Refusal interceptor: the small brain said "I can't" while
+                # tools/ability clearly exist and nothing even tried. Nudge once.
+                if (not degraded and not error and not actions and not nudged_once
+                        and _REFUSAL_RX.search(reply)):
+                    nudged_once = True
+                    nudge_at = len(self.history)
+                    self.history.append({"role": "assistant", "content": reply[:400]})
+                    self.history.append({"role": "user", "content":
+                        "[the reply above was wrong: you HAVE the ability — tools cover it, "
+                        "or it's plain writing. Answer the user's actual request now: call "
+                        "the tool in this same message if one applies; if it's a writing/"
+                        "content request, write it in full. No apologies, no 'I can't'.]"})
+                    continue
                 # Fallback answered because the main brain stumbled this turn —
                 # say so in one clause, or the user thinks the persona broke.
                 if error and degraded and not actions:

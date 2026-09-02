@@ -868,12 +868,14 @@ function fmtDue(iso) {
   } catch { return iso; }
 }
 
-function bubble(role, text, actions = [], isErr = false) {
+function bubble(role, text, actions = [], isErr = false, meta = {}) {
   const el = document.createElement("div");
   el.className = `msg ${role}${isErr ? " err" : ""}`;
+  const chip = (role === "user" || !meta.provider) ? "" :
+    `<div class="prov-chip${meta.provider.includes("offline") ? " warn" : ""}">via ${esc(meta.provider)}</div>`;
   el.innerHTML = `<span class="who">${role === "user" ? "operator" : "jarvis"}</span>` +
     `<div>${esc(text)}</div>` +
-    actions.map((a) => `<div class="act">⚙ ${esc(a.skill)}${Object.keys(a.arguments || {}).length ? " " + esc(JSON.stringify(a.arguments)) : ""}</div>`).join("");
+    actions.map((a) => `<div class="act">⚙ ${esc(a.skill)}${Object.keys(a.arguments || {}).length ? " " + esc(JSON.stringify(a.arguments)) : ""}</div>`).join("") + chip;
   $("#log").appendChild(el);
   $("#log").scrollTop = $("#log").scrollHeight;
   return el;
@@ -894,7 +896,7 @@ async function sendMessage(text, switchView = false) {
     // Fast path: stream the answer token-by-token.
     const res = await streamChat(text, ghost);
     ghost.remove();
-    bubble("bot", res.reply || "(no reply)", res.actions || [], !!res.error);
+    bubble("bot", res.reply || "(no reply)", res.actions || [], !!res.error, { provider: res.provider });
     say(res.reply);
     refreshDash();
   } catch (e) {
@@ -903,7 +905,7 @@ async function sendMessage(text, switchView = false) {
     try {
       const d = await post("/api/chat", { message: text });
       ghost.remove();
-      bubble("bot", d.reply || "(no reply)", d.actions || [], !!d.error);
+      bubble("bot", d.reply || "(no reply)", d.actions || [], !!d.error, { provider: d.provider });
       say(d.reply);
       refreshDash();
     } catch (e2) {

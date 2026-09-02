@@ -182,7 +182,9 @@ def get_weather(city: str = "") -> str:
     },
     triggers=["what's the news", "give me the news", "news about {topic}", "headlines",
               "what is the news", "tell me the news", "latest news", "news today",
-              "today\"s news", "any news", "get me the news", "news", "headlines", "today\u2019s news"],
+              "today\"s news", "any news", "get me the news", "news", "headlines", "today\u2019s news",
+              "whats on the news", "what is on the news", "tell me whats on the news",
+              "what are the headlines", "read me the news", "check the news"],
 )
 def get_news(topic: str = "") -> str:
     import re
