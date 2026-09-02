@@ -62,6 +62,10 @@ if not exist ".env" (
   echo   Created .env  ^(open it later to add an API key - optional^)
 )
 
+REM Mark the environment as set up (JARVIS.bat tops up deps when this stamp
+REM  is older than requirements.txt - i.e., after an update pulled new deps)
+copy /y nul "%~dp0.setup-ok" >nul 2>nul
+
 REM ── Pre-compile bytecode so every launch doesn't crawl under AV scans ──
 echo   Pre-compiling for faster startups ^(one-time^)...
 call .venv\Scripts\python.exe -m compileall -q jarvis >nul 2>nul

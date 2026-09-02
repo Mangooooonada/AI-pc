@@ -23,3 +23,4 @@ google_token.json
 *.gguf
 training/*.jsonl
 training/jarvis-me*/
+.setup-ok
