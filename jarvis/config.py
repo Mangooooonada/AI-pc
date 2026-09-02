@@ -170,6 +170,7 @@ class Config:
     autolock: bool = _bool("JARVIS_AUTOLOCK", False)          # lock Windows when you walk away
     autolock_minutes: int = _int("JARVIS_AUTOLOCK_MINUTES", 10)  # idle threshold
     autolock_warn_secs: int = _int("JARVIS_AUTOLOCK_WARN", 30)   # bell warning before locking
+    clipboard_watch: bool = _bool("JARVIS_CLIPBOARD_WATCH", False)  # remember what you copy
     computer_use: bool = _bool("JARVIS_COMPUTER_USE", False)  # Jarvis may drive the GUI (plan-first)
     hotkey: bool = _bool("JARVIS_HOTKEY", True)       # Ctrl+J summons the window (Windows)
     # Share the UI on the local network (phone control). Enabling binds the

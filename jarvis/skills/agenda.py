@@ -398,3 +398,30 @@ def executive_briefing() -> str:
         pass
     parts.append(system_status().replace("\n", "; "))
     return "\n".join(parts)
+
+
+@skill(
+    "clipboard_history",
+    "Answer 'what did I copy earlier', search recent clipboard text, or copy something back.",
+    {
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "Optional text to search for"}},
+    },
+    triggers=[
+        "what did i copy", "what did i copy earlier", "clipboard history",
+        "read my clipboard", "what's on my clipboard", "whats on my clipboard",
+        "search my clipboard for {query}", "find in my clipboard {query}",
+        "did i copy {query}", "what's in my clipboard {query}",
+    ],
+)
+def clipboard_history(query: str = "") -> str:
+    items = state.get_clipboard(limit=8, query=query)
+    if not items:
+        return ("Nothing" + (f" about '{query}'" if query else "") + " in clipboard memory yet. "
+                "Flip '📋 Clipboard memory' on in The Watcher to start keeping copies.")
+    lines = ["What you've copied recently:" if not query else f"Clipboard items matching '{query}':"]
+    for it in reversed(items):
+        snippet = it["text"].replace("\n", " ")
+        lines.append(f"  • {snippet[:90]}{'…' if len(it['text']) > 90 else ''}" +
+                     (f"  (from {it['app']})" if it.get("app") else ""))
+    return "\n".join(lines)

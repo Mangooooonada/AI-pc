@@ -655,7 +655,7 @@ def get_llms() -> Dict[str, Any]:
 def get_watch() -> Dict[str, Any]:
     """Proof the eyes are on: what's enabled, the live focus, the shot reel."""
     from .observe import (observer_enabled, shots_enabled, typed_log_enabled,
-                          active_window, _shots_dir, autolock_enabled)
+                          active_window, _shots_dir, autolock_enabled, clipboard_enabled)
     app_name, title = observer_enabled() and active_window() or ("", "")
     shots_dir = _shots_dir()
     reels = sorted(shots_dir.glob("shot-*.png"))
@@ -665,6 +665,8 @@ def get_watch() -> Dict[str, Any]:
     return {
         "observer": observer_enabled(), "shots_on": shots_enabled(),
         "typed_on": typed_log_enabled(), "autolock": autolock_enabled(),
+        "clipboard_on": clipboard_enabled(),
+        "clipboard_recent": state.get_clipboard(limit=6),
         "autolock_minutes": config.autolock_minutes, "poll": config.observe_poll,
         "shot_interval": config.shot_interval,
         "focused": {"app": app_name, "title": title},
@@ -690,6 +692,7 @@ class WatchIn(BaseModel):
     shots: Optional[bool] = None
     typed: Optional[bool] = None
     autolock: Optional[bool] = None
+    clipboard: Optional[bool] = None
 
 
 class KeyTestIn(BaseModel):
@@ -739,6 +742,9 @@ def set_watch(body: WatchIn) -> Dict[str, Any]:
     if body.autolock is not None:
         from .observe import set_autolock
         set_autolock(body.autolock)
+    if body.clipboard is not None:
+        from .observe import set_clipboard
+        set_clipboard(body.clipboard)
     return {"ok": True, "state": get_watch()}
 
 

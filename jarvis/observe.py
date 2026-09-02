@@ -125,6 +125,84 @@ def autolock_tick(idle_secs=None, lock_fn=None, notify_fn=None) -> bool:
     return False
 
 
+# ------------------------------------------------------- clipboard watch ----
+_clip = {"last_hash": ""}
+
+
+def clipboard_enabled() -> bool:
+    flag = state.get_flag("clipboard", "")
+    return flag == "1" if flag else bool(config.clipboard_watch)
+
+
+def set_clipboard(on: bool) -> None:
+    state.set_flag("clipboard", "1" if on else "0")
+    if on:
+        state.add_notification(
+            "📋 Clipboard memory on — things you copy become searchable "
+            "('what did I copy earlier?'). Password/keys are never stored; "
+            "'stop remembering the clipboard' ends it.")
+
+
+def _read_clipboard_text() -> str:
+    """Windows CF_UNICODETEXT via ctypes — no deps. '' elsewhere/failure."""
+    try:
+        import sys as _sys
+        if not _sys.platform.startswith("win"):
+            return ""
+        import ctypes
+        user32 = ctypes.windll.user32
+        CF_UNICODETEXT = 13
+        if not user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+            return ""
+        if not user32.OpenClipboard(None):
+            return ""
+        try:
+            h = user32.GetClipboardData(CF_UNICODETEXT)
+            if not h:
+                return ""
+            kernel32 = ctypes.windll.kernel32
+            kernel32.GlobalLock.restype = ctypes.c_wchar_p
+            txt = kernel32.GlobalLock(h) or ""
+            kernel32.GlobalUnlock(h)
+            return str(txt).strip()
+        finally:
+            user32.CloseClipboard()
+    except Exception:
+        return ""
+
+
+def _looks_secret(text: str) -> bool:
+    """Never archive passwords/keys/tokens people copy."""
+    try:
+        from .privacy import _PATTERNS
+        for rx, _ in _PATTERNS:
+            if rx.search(text):
+                return True
+    except Exception:
+        pass
+    low = text.lower()
+    return ("password" in low and "=" in low) or low.startswith(("sk-", "ghp_", "xox"))
+
+
+def clipboard_tick(reader=None) -> bool:
+    """One beat: if the clipboard changed and isn't sensitive-shaped, bank it.
+    Returns True on a new entry. reader() is injectable for tests."""
+    if not clipboard_enabled():
+        return False
+    txt = (reader or _read_clipboard_text)()
+    if not txt or len(txt) > 2048 or _sensitive_now():
+        return False
+    digest = str(hash(txt))
+    if digest == _clip["last_hash"]:
+        return False
+    _clip["last_hash"] = digest
+    if _looks_secret(txt):
+        return False  # deliberately NOT stored
+    app, _title = active_window()
+    state.add_clipboard(txt, app)
+    return True
+
+
 def observer_enabled() -> bool:
     flag = state.get_flag("observe", "")
     if flag:
@@ -157,6 +235,7 @@ def watch_loop() -> None:
             else:
                 last_app, last_title = "", ""  # don't record the toggle moment
             autolock_tick()  # independent of the observer switch
+            clipboard_tick()  # bank newly-copied text
         except Exception:
             pass  # the watcher must never crash the app
         _t.sleep(max(2, int(config.observe_poll)))

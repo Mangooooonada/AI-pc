@@ -671,11 +671,16 @@ async function loadWatch() {
     tgl("👁 Observer", d.observer, "observer", "remembers which apps you use, learns your hours") +
     tgl("📸 Screenshot timeline", d.shots_on, "shots", `one frame / ${d.shot_interval}s, pruned on rollover + exit`) +
     tgl("⌨️ Typing memory", d.typed_on, "typed", "remembers text you type (auto-pauses on sign-in screens)") +
-    tgl("🔒 Auto-lock walk-away", d.autolock, "autolock", `locks Windows after ${d.autolock_minutes} idle minutes (30s warning first)`);
+    tgl("🔒 Auto-lock walk-away", d.autolock, "autolock", `locks Windows after ${d.autolock_minutes} idle minutes (30s warning first)`) +
+    tgl("📋 Clipboard memory", d.clipboard_on, "clipboard", "copies become searchable — secrets never stored");
   $("#watch-focus").innerHTML = d.observer && d.focused?.app
     ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
        <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`
     : `<div class="st-note">Nothing — the observer is off${d.observer ? " (or the desktop can't be read here)" : ""}.</div>`;
+  $("#watch-clipboard").innerHTML = (d.clipboard_recent || []).slice().reverse().map((c) =>
+    `<div class="li"><span>${esc((c.text || "").replace(/\n/g, " ").slice(0, 52))}${(c.text || "").length > 52 ? "…" : ""}</span>
+     <span class="st-note">${esc(c.app || "")} · ${fmtWhen(c.at)}</span></div>`
+  ).join("") || `<span class="st-note">${d.clipboard_on ? "Nothing copied yet — it lands here." : "Off — flip the 📋 switch above."}</span>`;
   $("#watch-activity").innerHTML = (d.activity || []).slice().reverse().map((a) =>
     `<div class="li"><span>${esc(a.app || "?")}</span>
      <span class="st-note">${esc((a.title || "").slice(0, 60))} · ${fmtWhen(a.at)}</span></div>`

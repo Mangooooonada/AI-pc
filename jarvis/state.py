@@ -294,6 +294,28 @@ def bump_boot() -> None:
 
 
 # ------------------------------------------------------------- flags -------
+def add_clipboard(text: str, app: str = "", at: str = "") -> Dict[str, Any]:
+    """One entry in the clipboard ledger (local-only; secretly-shaped text never
+    lands — observe.py refuses it before calling)."""
+    entry = {"id": str(uuid.uuid4())[:8], "at": at or _now(),
+             "text": (text or "")[:2048], "app": (app or "")[:80]}
+    with _LOCK:
+        items = _STATE.setdefault("clipboard", [])
+        items.append(entry)
+        del items[:-50]
+    save()
+    return entry
+
+
+def get_clipboard(limit: int = 50, query: str = "") -> List[Dict[str, Any]]:
+    items = list(_STATE.get("clipboard", []))
+    if query:
+        q = query.lower()
+        items = [i for i in items if q in i.get("text", "").lower()
+                 or q in i.get("app", "").lower()]
+    return items[-limit:]
+
+
 def get_flag(key: str, default: str = "") -> str:
     with _LOCK:
         return _STATE.setdefault("flags", {}).get(key, default)
