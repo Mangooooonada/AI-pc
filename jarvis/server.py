@@ -647,6 +647,59 @@ def get_llms() -> Dict[str, Any]:
     return {"providers": agents_mod.llm_providers()}
 
 
+
+# ------------------------------------------------------------- watcher -----
+@app.get("/api/watch")
+def get_watch() -> Dict[str, Any]:
+    """Proof the eyes are on: what's enabled, the live focus, the shot reel."""
+    from .observe import (observer_enabled, shots_enabled, typed_log_enabled,
+                          active_window, _shots_dir)
+    app_name, title = observer_enabled() and active_window() or ("", "")
+    shots_dir = _shots_dir()
+    reels = sorted(shots_dir.glob("shot-*.png"))
+    shots = [{"name": p_.name, "kb": max(1, p_.stat().st_size // 1024),
+              "at": p_.stat().st_mtime} for p_ in reels[-8:]]
+    activity = state.get_activity()[-14:]
+    return {
+        "observer": observer_enabled(), "shots_on": shots_enabled(),
+        "typed_on": typed_log_enabled(), "poll": config.observe_poll,
+        "shot_interval": config.shot_interval,
+        "focused": {"app": app_name, "title": title},
+        "activity": activity,
+        "shots": shots, "shots_total": len(reels),
+    }
+
+
+@app.get("/api/watch/shot")
+def watch_shot(name: str) -> Any:
+    from .observe import _shots_dir
+    import re as _re
+    if not _re.fullmatch(r"shot-\d{8}-\d{6}\.png", name or ""):
+        raise HTTPException(400, "bad shot name")
+    path = _shots_dir() / name
+    if not path.exists():
+        raise HTTPException(404, "gone (auto-purged)")
+    return FileResponse(path)
+
+
+class WatchIn(BaseModel):
+    observer: Optional[bool] = None
+    shots: Optional[bool] = None
+    typed: Optional[bool] = None
+
+
+@app.post("/api/watch")
+def set_watch(body: WatchIn) -> Dict[str, Any]:
+    from .observe import set_observer, set_shots, set_typed_log
+    if body.observer is not None:
+        set_observer(body.observer)
+    if body.shots is not None:
+        set_shots(body.shots)
+    if body.typed is not None:
+        set_typed_log(body.typed)
+    return {"ok": True, "state": get_watch()}
+
+
 @app.get("/api/feed")
 def get_feed() -> Dict[str, Any]:
     return {"items": agents_mod.intelligence_feed(get_agent().provider_name)}

@@ -568,3 +568,10 @@ body.calm .lm-r1,body.calm .lm-r2{animation:none}
 .dead-keys .dk-clear { background: #a4503f; color: #fff; border: 0; border-radius: 6px;
   padding: 2px 8px; cursor: pointer; margin-right: 6px; }
 .dead-keys .dk-clear:hover { background: #c06a55; }
+
+/* watcher visuals */
+.watch-focus-app { font-size: 22px; color: #3ce0ff; letter-spacing: .04em; margin-bottom: 4px; }
+.shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.shot-grid .shot { margin: 0; border: 1px solid #12314a; border-radius: 8px; overflow: hidden; background: #050b14; }
+.shot-grid .shot img { width: 100%; display: block; }
+.shot-grid .shot figcaption { font: 10px "Consolas", monospace; color: #4d6a82; padding: 4px 6px; }

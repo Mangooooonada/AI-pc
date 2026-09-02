@@ -391,6 +391,7 @@ const NAV = [
   ["memory", "Memory", "memory"],
   ["conversations", "Conversations", "chat"],
   ["knowledge", "Knowledge Base", "book"],
+  ["watcher", "The Watcher", "eye"],
   ["tools", "Tools & Skills", "tools"],
   ["workflows", "Workflows", "flow"],
   ["studio", "Interface Studio", "palette"],
@@ -467,7 +468,7 @@ function go(view) {
   const loader = { tasks: loadTasks, calendar: loadTasks, memory: loadMemory,
     conversations: loadConversations, tools: loadSkills, workflows: loadWorkflows,
     agents: loadAgents, aicore: loadLLMs, knowledge: renderKB, studio: buildStudio,
-    settings: loadSettings }[view];
+    watcher: loadWatch, settings: loadSettings }[view];
   if (loader) loader();
   if (view === "aicore") setTimeout(() => $("#input").focus(), 60);
 }
@@ -626,6 +627,45 @@ function tickClock() {
 }
 
 /* ─────────────────────────── data loaders ─────────────────────────── */
+/* ─────────────────────────── the watcher ─────────────────────────── */
+async function loadWatch() {
+  const d = await api("/api/watch");
+  const sub = d.observer
+    ? `watching — sampling every ${d.poll}s${d.shots_on ? `, a frame every ${d.shot_interval}s` : ""}`
+    : "OFF — flip a switch and I'll start remembering what happens here.";
+  $("#watch-sub").textContent = sub;
+
+  const tgl = (label, on, key, hint) =>
+    `<label class="st-ctl"><span>${label}<br><small class="st-note">${hint}</small></span>
+     <button type="button" class="st-toggle ${on ? "on" : ""}" data-watch="${key}"></button></label>`;
+  $("#watch-toggles").innerHTML =
+    tgl("👁 Observer", d.observer, "observer", "remembers which apps you use, learns your hours") +
+    tgl("📸 Screenshot timeline", d.shots_on, "shots", `one frame / ${d.shot_interval}s, pruned on rollover + exit`) +
+    tgl("⌨️ Typing memory", d.typed_on, "typed", "remembers text you type (auto-pauses on sign-in screens)");
+  $("#watch-focus").innerHTML = d.observer && d.focused?.app
+    ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
+       <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`
+    : `<div class="st-note">Nothing — the observer is off${d.observer ? " (or the desktop can't be read here)" : ""}.</div>`;
+  $("#watch-activity").innerHTML = (d.activity || []).slice().reverse().map((a) =>
+    `<div class="li"><span>${esc(a.app || "?")}</span>
+     <span class="st-note">${esc((a.title || "").slice(0, 60))} · ${fmtWhen(a.at)}</span></div>`
+  ).join("") || '<div class="li"><span class="st-note">No sightings yet.</span></div>';
+  $("#watch-shot-count").textContent = d.shots_on ? `(${d.shots_total} on disk, last 8 shown)` : "(off)";
+  $("#watch-shots").innerHTML = (d.shots || []).slice().reverse().map((sh) =>
+    `<figure class="shot"><img loading="lazy" src="/api/watch/shot?name=${encodeURIComponent(sh.name)}" alt="${esc(sh.name)}">
+     <figcaption>${new Date(sh.at * 1000).toLocaleTimeString()}</figcaption></figure>`
+  ).join("") || `<span class="st-note">${d.shots_on ? "No frames captured yet — give it a minute." : "Turn on the timeline to start capturing."}</span>`;
+
+  document.querySelectorAll("[data-watch]").forEach((b) => (b.onclick = async () => {
+    const next = !b.classList.contains("on");
+    const r = await post("/api/watch", { [b.dataset.watch]: next });
+    if (r.ok) { paintNotifBadge(); loadWatch(); toast(next ? "Eyes open." : "Eyes closed."); }
+  }));
+}
+setInterval(() => {  // live focus line refreshes while you're on the view
+  if ($$(".view.active")[0]?.dataset.view === "watcher") loadWatch();
+}, 6000);
+
 async function loadStatus() {
   STATUS = await api("/api/status");
   (STATUS.alerts || []).forEach((a) => {
