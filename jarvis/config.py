@@ -165,6 +165,7 @@ class Config:
     observe_text: bool = _bool("JARVIS_OBSERVE_TEXT", False)  # ALSO record typed text (local-only)
     observe_shots: bool = _bool("JARVIS_OBSERVE_SHOTS", False)  # ALSO screenshot each minute
     shot_interval: int = _int("JARVIS_OBSERVE_SHOT_INTERVAL", 60)
+    shot_auto_wipe: bool = _bool("JARVIS_SHOT_AUTO_WIPE", True)  # wipe frames daily + on exit
     observe_poll: int = _int("JARVIS_OBSERVE_POLL", 4)  # seconds between samples
     computer_use: bool = _bool("JARVIS_COMPUTER_USE", False)  # Jarvis may drive the GUI (plan-first)
     hotkey: bool = _bool("JARVIS_HOTKEY", True)       # Ctrl+J summons the window (Windows)

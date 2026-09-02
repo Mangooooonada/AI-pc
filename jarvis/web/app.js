@@ -1007,6 +1007,29 @@ function initVoice() {
 /* ───── always-listening wake loop + global summon hook ───── */
 let WAKE_LOOP = null, WAKE_WANT = false;
 
+let _wakeFailCount = 0;
+function safeStartWakeLoop() {
+  // WebView2 (the desktop window) has flaked out voice before; if the
+  // recognizer won't stay alive after 3 honest tries, disarm rather than hang.
+  if (_wakeFailCount >= 3) {
+    localStorage.setItem("jarvis.listen", "off");
+    toast("Always-listen keeps failing here, so I disarmed it — the mic button still works.", "warn");
+    fetch("/api/uierror", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: "wake loop gave up after 3 failed starts"})}).catch(() => {});
+    return;
+  }
+  try { startWakeLoop(); } catch (e) { _wakeFailCount++; reportUiError("startWakeLoop threw: " + e); }
+}
+
+function reportUiError(text) {
+  try {
+    fetch("/api/uierror", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: String(text).slice(0, 500)})}).catch(() => {});
+  } catch {}
+}
+window.addEventListener("error", (e) => reportUiError("JS: " + (e.message || e.type)));
+window.addEventListener("unhandledrejection", (e) => reportUiError("Promise: " + (e.reason?.message || e.reason || "unknown")));
+
 function startWakeLoop() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return toast("Always-listen needs Edge or Chrome for speech recognition.", "warn");
@@ -1027,7 +1050,7 @@ function startWakeLoop() {
     const hot = WAKE_LOOP && WAKE_LOOP._hot;
     WAKE_LOOP = null;
     if (hot) { toast(`Heard you — listening…`); toggleMic(); }
-    else if (WAKE_WANT && !LISTENING) setTimeout(() => { if (WAKE_WANT && !LISTENING) startWakeLoop(); }, 900);
+    else if (WAKE_WANT && !LISTENING) setTimeout(() => { if (WAKE_WANT && !LISTENING) startWakeLoop(); }, 2200);
   };
   WAKE_LOOP.onerror = (e) => {
     if (e.error === "not-allowed") {
@@ -1212,8 +1235,10 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
     if (brief?.pending) setTimeout(() => { bubble("bot", brief.text); if (SPEAK_BACK) say(brief.spoken); }, 900);
   } catch {}
 
-  // Always-listening wake word, if the user armed it.
-  if (localStorage.getItem("jarvis.listen") === "on") setTimeout(startWakeLoop, 1500);
+  // Always-listening wake word, if the user armed it — but LATE: letting the
+  // page settle first avoids the WebView2 voice-start freeze (mic/perms race
+  // right after load was the post-boot "Not Responding").
+  if (localStorage.getItem("jarvis.listen") === "on") setTimeout(safeStartWakeLoop, 4000);
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 })();

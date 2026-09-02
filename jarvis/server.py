@@ -229,6 +229,7 @@ SETTINGS_FIELDS: List[Dict[str, Any]] = [
         {"key": "JARVIS_OBSERVE", "attr": "observe", "label": "Observer: quietly learn my app-usage habits", "kind": "bool"},
         {"key": "JARVIS_OBSERVE_TEXT", "attr": "observe_text", "label": "Observer+: also remember typed text (auto-pauses on sign-in screens)", "kind": "bool"},
         {"key": "JARVIS_OBSERVE_SHOTS", "attr": "observe_shots", "label": "Observer+: per-minute screenshot timeline (last 60, local)", "kind": "bool"},
+        {"key": "JARVIS_SHOT_AUTO_WIPE", "attr": "shot_auto_wipe", "label": "Screenshot timeline wipes itself on exit + every midnight", "kind": "bool"},
         {"key": "JARVIS_COMPUTER_USE", "attr": "computer_use", "label": "Computer use: Jarvis may drive mouse/keyboard (plan-approved, stoppable)", "kind": "bool"},
         {"key": "JARVIS_AUTO_MEM", "attr": "auto_mem", "label": "Auto-remember important facts you mention", "kind": "bool"},
         {"key": "JARVIS_BRIEFING", "attr": "briefing", "label": "Morning briefing on first launch of the day", "kind": "bool"},
@@ -533,6 +534,22 @@ def update_settings(body: SettingsIn) -> Dict[str, Any]:
     return {"ok": True, "applied": list(applied), "persisted": env_ok, "notes": notes}
 
 
+@app.post("/api/uierror")
+def ui_error(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Browser-side JS errors land in <workspace>/jarvis-ui.log — the desktop
+    window has no devtools, so this is the only window into UI crashes."""
+    try:
+        path = config.workspace / "jarvis-ui.log"
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now().isoformat(timespec='seconds')}  {str(body.get('text'))[:400]}\n")
+        if path.stat().st_size > 200_000:
+            tail = path.read_text(encoding='utf-8', errors='replace')[-100_000:]
+            path.write_text(tail, encoding='utf-8')
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @app.post("/api/speak")
 def speak(body: SpeakIn) -> Dict[str, Any]:
     try:
@@ -548,6 +565,12 @@ def speak(body: SpeakIn) -> Dict[str, Any]:
 
 @app.post("/api/shutdown")
 def shutdown() -> Dict[str, Any]:
+    try:
+        if config.shot_auto_wipe:
+            from .observe import wipe_observer_shots
+            wipe_observer_shots("app exit")
+    except Exception:
+        pass
     """Terminate this backend process (used by the desktop launcher to clear
     a stale previous instance before booting a fresh one)."""
 
@@ -880,6 +903,13 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     try:  # native crashes (audio/WebView2) leave a readable stack here
         from .crashlog import enable as _crashlog
         _crashlog()
+    except Exception:
+        pass
+    try:  # screenshot timeline hygiene on graceful exits (Ctrl+C / quit)
+        import atexit
+        from .observe import wipe_observer_shots
+        if config.shot_auto_wipe:
+            atexit.register(lambda: wipe_observer_shots("app exit"))
     except Exception:
         pass
 

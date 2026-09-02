@@ -202,7 +202,7 @@ _SENSITIVE_TITLES = ("password", "sign in", "log in", "credential", "passphrase"
 
 _kl: Dict[str, Any] = {"buf": [], "app": "", "last": 0.0, "started": False,
                        "missing_note": False}
-_shots = {"last": 0.0, "warned": False}
+_shots = {"last": 0.0, "warned": False, "day": ""}
 _SHOT_KEEP = 60
 
 
@@ -328,8 +328,10 @@ def _take_observation_shot() -> None:
 
 def tick_observer() -> None:
     """Called from watch_loop each cycle: keyboard listener + shot cadence
-    + idle flush of the typing buffer."""
+    + idle flush of the typing buffer + daily frame wipe."""
     import time as _t
+    if shots_enabled():
+        _wipe_if_new_day()
     if typed_log_enabled():
         if ensure_keyboard_listener():
             # idle flush: untouched buffer older than 8s becomes a record
@@ -355,3 +357,29 @@ def typed_recall(limit: int = 12) -> str:
             hh = "?"
         lines.append(f"  {hh}  [{r['app'] or '?'}] {r['text'][:110]}")
     return "\n".join(lines)
+
+
+def wipe_observer_shots(reason: str = "scheduled") -> int:
+    """Delete the screenshot timeline. Returns how many frames died."""
+    try:
+        folder = _shots_dir()
+    except Exception:
+        return 0
+    n = 0
+    for f in folder.glob("shot-*.png"):
+        try:
+            f.unlink(); n += 1
+        except Exception:
+            pass
+    if n:
+        state.add_notification(f"📸 Screenshot timeline cleared ({n} frame(s)) — {reason}.")
+    return n
+
+
+def _wipe_if_new_day() -> None:
+    """Daily hygiene: frames never survive past midnight (or a powered-off
+    night — the first tick of a new day finishes the job)."""
+    today = datetime.now().date().isoformat()
+    if _shots.get("day") and _shots["day"] != today:
+        wipe_observer_shots("new day")
+    _shots["day"] = today
