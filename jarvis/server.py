@@ -45,6 +45,20 @@ def get_agent() -> Agent:
     return _agent
 
 
+def warm_agent() -> None:
+    """Build the lazy Agent before the UI asks.
+
+    Agent() probes LLM providers (Ollama reachability etc.); doing that on the
+    UI's first /api/status leaves a freshly-painted window sitting on BOOTING
+    for seconds. The desktop launcher pre-warms in a daemon thread during the
+    early-boot phase so the first status answers instantly.
+    """
+    try:
+        get_agent()
+    except Exception:  # noqa: BLE001 - a warm-up failure must never crash boot
+        pass
+
+
 state.bump_boot()
 
 
@@ -603,7 +617,12 @@ def reset() -> Dict[str, Any]:
 
 @app.post("/api/provider/{name}")
 def set_provider(name: str) -> Dict[str, Any]:
-    return get_agent().reload_provider(name)
+    if str(name).lower() not in {"auto", "ollama", "openai", "remote", "offline"}:
+        raise HTTPException(
+            400,
+            "provider must be auto, ollama, openai, remote or offline",
+        )
+    return get_agent().reload_provider(str(name).lower())
 
 
 # ------------------------------------------------------------- telemetry ---

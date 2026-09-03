@@ -221,7 +221,7 @@ class Config:
 
     def resolved_provider(self) -> str:
         """Decide which brain to use right now."""
-        if self.provider in {"openai", "ollama", "offline"}:
+        if self.provider in {"openai", "ollama", "remote", "offline"}:
             return self.provider
         if self.openai_api_key:
             return "openai"
