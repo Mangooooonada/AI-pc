@@ -5,4 +5,4 @@ _VF = _Path(__file__).resolve().parent.parent / "VERSION"
 try:
     __version__ = _VF.read_text(encoding="utf-8").strip() or "0.0.0-dev"
 except OSError:                     # packaged / frozen builds bundle no root file
-    __version__ = "1.2.7"
+    __version__ = "1.2.8"
