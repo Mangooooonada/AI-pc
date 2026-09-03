@@ -659,9 +659,20 @@ def get_watch() -> Dict[str, Any]:
     app_name, title = observer_enabled() and active_window() or ("", "")
     shots_dir = _shots_dir()
     reels = sorted(shots_dir.glob("shot-*.png"))
-    shots = [{"name": p_.name, "kb": max(1, p_.stat().st_size // 1024),
-              "at": p_.stat().st_mtime} for p_ in reels[-8:]]
-    activity = state.get_activity()[-14:]
+    shots = []
+    # A frame can be purged between glob() and stat() at midnight or on exit.
+    # Ignore that one race instead of turning a harmless refresh into a 500.
+    for shot_path in reels[-8:]:
+        try:
+            shot_stat = shot_path.stat()
+        except OSError:
+            continue
+        shots.append({"name": shot_path.name,
+                      "kb": max(1, shot_stat.st_size // 1024),
+                      "at": shot_stat.st_mtime})
+    # Ask the state store for only what the panel can render; copying the full
+    # 4,000-event ledger on every poll made this endpoint needlessly expensive.
+    activity = state.get_activity(limit=14)
     return {
         "observer": observer_enabled(), "shots_on": shots_enabled(),
         "typed_on": typed_log_enabled(), "autolock": autolock_enabled(),
@@ -684,7 +695,11 @@ def watch_shot(name: str) -> Any:
     path = _shots_dir() / name
     if not path.exists():
         raise HTTPException(404, "gone (auto-purged)")
-    return FileResponse(path)
+    # Shot names are immutable and already validated above. Let WebView2 cache
+    # them instead of downloading/decompressing the same PNG on every refresh.
+    return FileResponse(path, headers={
+        "Cache-Control": "public, max-age=3600, immutable"
+    })
 
 
 class WatchIn(BaseModel):

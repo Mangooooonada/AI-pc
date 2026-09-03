@@ -657,49 +657,102 @@ function tickClock() {
 
 /* ─────────────────────────── data loaders ─────────────────────────── */
 /* ─────────────────────────── the watcher ─────────────────────────── */
-async function loadWatch() {
-  const d = await api("/api/watch");
-  const sub = d.observer
-    ? `watching — sampling every ${d.poll}s${d.shots_on ? `, a frame every ${d.shot_interval}s` : ""}`
-    : "OFF — flip a switch and I'll start remembering what happens here.";
-  $("#watch-sub").textContent = sub;
+// The watcher used to rebuild five panels and all screenshot <img> tags every
+// six seconds. In WebView2 that made the tab feel frozen, especially when the
+// timeline contained several large PNGs. Keep one request in flight and only
+// touch a panel when its data actually changed.
+let WATCH_BUSY = false;
+let WATCH_AGAIN = false;
+let WATCH_SIG = { toggles: "", focus: "", clipboard: "", activity: "", shots: "" };
 
-  const tgl = (label, on, key, hint) =>
-    `<label class="st-ctl"><span>${label}<br><small class="st-note">${hint}</small></span>
-     <button type="button" class="st-toggle ${on ? "on" : ""}" data-watch="${key}"></button></label>`;
-  $("#watch-toggles").innerHTML =
-    tgl("👁 Observer", d.observer, "observer", "remembers which apps you use, learns your hours") +
-    tgl("📸 Screenshot timeline", d.shots_on, "shots", `one frame / ${d.shot_interval}s, pruned on rollover + exit`) +
-    tgl("⌨️ Typing memory", d.typed_on, "typed", "remembers text you type (auto-pauses on sign-in screens)") +
-    tgl("🔒 Auto-lock walk-away", d.autolock, "autolock", `locks Windows after ${d.autolock_minutes} idle minutes (30s warning first)`) +
-    tgl("📋 Clipboard memory", d.clipboard_on, "clipboard", "copies become searchable — secrets never stored");
-  $("#watch-focus").innerHTML = d.observer && d.focused?.app
-    ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
-       <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`
-    : `<div class="st-note">Nothing — the observer is off${d.observer ? " (or the desktop can't be read here)" : ""}.</div>`;
-  $("#watch-clipboard").innerHTML = (d.clipboard_recent || []).slice().reverse().map((c) =>
-    `<div class="li"><span>${esc((c.text || "").replace(/\n/g, " ").slice(0, 52))}${(c.text || "").length > 52 ? "…" : ""}</span>
-     <span class="st-note">${esc(c.app || "")} · ${fmtWhen(c.at)}</span></div>`
-  ).join("") || `<span class="st-note">${d.clipboard_on ? "Nothing copied yet — it lands here." : "Off — flip the 📋 switch above."}</span>`;
-  $("#watch-activity").innerHTML = (d.activity || []).slice().reverse().map((a) =>
-    `<div class="li"><span>${esc(a.app || "?")}</span>
-     <span class="st-note">${esc((a.title || "").slice(0, 60))} · ${fmtWhen(a.at)}</span></div>`
-  ).join("") || '<div class="li"><span class="st-note">No sightings yet.</span></div>';
-  $("#watch-shot-count").textContent = d.shots_on ? `(${d.shots_total} on disk, last 8 shown)` : "(off)";
-  $("#watch-shots").innerHTML = (d.shots || []).slice().reverse().map((sh) =>
-    `<figure class="shot"><img loading="lazy" src="/api/watch/shot?name=${encodeURIComponent(sh.name)}" alt="${esc(sh.name)}">
-     <figcaption>${new Date(sh.at * 1000).toLocaleTimeString()}</figcaption></figure>`
-  ).join("") || `<span class="st-note">${d.shots_on ? "No frames captured yet — give it a minute." : "Turn on the timeline to start capturing."}</span>`;
-
-  document.querySelectorAll("[data-watch]").forEach((b) => (b.onclick = async () => {
-    const next = !b.classList.contains("on");
-    const r = await post("/api/watch", { [b.dataset.watch]: next });
-    if (r.ok) { paintNotifBadge(); loadWatch(); toast(next ? "Eyes open." : "Eyes closed."); }
-  }));
+function watchChanged(key, value) {
+  const sig = JSON.stringify(value ?? null);
+  const changed = WATCH_SIG[key] !== sig;
+  WATCH_SIG[key] = sig;
+  return changed;
 }
-setInterval(() => {  // live focus line refreshes while you're on the view
+
+async function loadWatch() {
+  if (WATCH_BUSY) { WATCH_AGAIN = true; return; }
+  WATCH_BUSY = true;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  try {
+    const d = await api("/api/watch", controller ? { signal: controller.signal } : undefined);
+    const sub = d.observer
+      ? `watching — sampling every ${d.poll}s${d.shots_on ? `, a frame every ${d.shot_interval}s` : ""}`
+      : "OFF — flip a switch and I'll start remembering what happens here.";
+    $("#watch-sub").textContent = sub;
+
+    const toggleState = [d.observer, d.shots_on, d.typed_on, d.autolock,
+      d.clipboard_on, d.shot_interval, d.autolock_minutes];
+    if (watchChanged("toggles", toggleState)) {
+      const tgl = (label, on, key, hint) =>
+        `<label class="st-ctl"><span>${label}<br><small class="st-note">${hint}</small></span>
+         <button type="button" class="st-toggle ${on ? "on" : ""}" data-watch="${key}"></button></label>`;
+      $("#watch-toggles").innerHTML =
+        tgl("👁 Observer", d.observer, "observer", "remembers which apps you use, learns your hours") +
+        tgl("📸 Screenshot timeline", d.shots_on, "shots", `one frame / ${d.shot_interval}s, pruned on rollover + exit`) +
+        tgl("⌨️ Typing memory", d.typed_on, "typed", "remembers text you type (auto-pauses on sign-in screens)") +
+        tgl("🔒 Auto-lock walk-away", d.autolock, "autolock", `locks Windows after ${d.autolock_minutes} idle minutes (30s warning first)`) +
+        tgl("📋 Clipboard memory", d.clipboard_on, "clipboard", "copies become searchable — secrets never stored");
+
+      document.querySelectorAll("[data-watch]").forEach((b) => (b.onclick = async () => {
+        if (b.disabled) return;
+        b.disabled = true;
+        const next = !b.classList.contains("on");
+        try {
+          const r = await post("/api/watch", { [b.dataset.watch]: next });
+          if (r.ok) { paintNotifBadge(); toast(next ? "Eyes open." : "Eyes closed."); }
+        } finally {
+          b.disabled = false;
+          loadWatch();
+        }
+      }));
+    }
+
+    if (watchChanged("focus", d.focused || {})) {
+      $("#watch-focus").innerHTML = d.observer && d.focused?.app
+        ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
+           <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`
+        : `<div class="st-note">Nothing — the observer is off${d.observer ? " (or the desktop can't be read here)" : ""}.</div>`;
+    }
+    if (watchChanged("clipboard", d.clipboard_recent || [])) {
+      $("#watch-clipboard").innerHTML = (d.clipboard_recent || []).slice().reverse().map((c) =>
+        `<div class="li"><span>${esc((c.text || "").replace(/\n/g, " ").slice(0, 52))}${(c.text || "").length > 52 ? "…" : ""}</span>
+         <span class="st-note">${esc(c.app || "")} · ${fmtWhen(c.at)}</span></div>`
+      ).join("") || `<span class="st-note">${d.clipboard_on ? "Nothing copied yet — it lands here." : "Off — flip the 📋 switch above."}</span>`;
+    }
+    if (watchChanged("activity", d.activity || [])) {
+      $("#watch-activity").innerHTML = (d.activity || []).slice().reverse().map((a) =>
+        `<div class="li"><span>${esc(a.app || "?")}</span>
+         <span class="st-note">${esc((a.title || "").slice(0, 60))} · ${fmtWhen(a.at)}</span></div>`
+      ).join("") || '<div class="li"><span class="st-note">No sightings yet.</span></div>';
+    }
+
+    $("#watch-shot-count").textContent = d.shots_on ? `(${d.shots_total} on disk, last 8 shown)` : "(off)";
+    const shotSig = (d.shots || []).map((sh) => `${sh.name}:${sh.at}`).join("|");
+    if (watchChanged("shots", shotSig)) {
+      $("#watch-shots").innerHTML = (d.shots || []).slice().reverse().map((sh) =>
+        `<figure class="shot"><img loading="lazy" decoding="async" src="/api/watch/shot?name=${encodeURIComponent(sh.name)}" alt="${esc(sh.name)}">
+         <figcaption>${new Date(sh.at * 1000).toLocaleTimeString()}</figcaption></figure>`
+      ).join("") || `<span class="st-note">${d.shots_on ? "No frames captured yet — give it a minute." : "Turn on the timeline to start capturing."}</span>`;
+    }
+  } catch (e) {
+    const sub = $("#watch-sub");
+    if (sub) sub.textContent = "Watcher link delayed — retrying…";
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    WATCH_BUSY = false;
+    if (WATCH_AGAIN) {
+      WATCH_AGAIN = false;
+      setTimeout(loadWatch, 0);
+    }
+  }
+}
+setInterval(() => {  // light, deduplicated refresh while you're on the view
   if ($$(".view.active")[0]?.dataset.view === "watcher") loadWatch();
-}, 6000);
+}, 10000);
 
 async function loadStatus() {
   try {
