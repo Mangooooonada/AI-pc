@@ -22,7 +22,6 @@ DEFAULT: Dict[str, Any] = {
     "memories": [],
     "conversations": [],
     "activity": [],
-    "usage_days": {},
     "patterns": [],
     "workflows": [],
     "stats": {"tool_calls": 0, "session_turns": 0, "boot_count": 0,
@@ -532,29 +531,22 @@ def _relative(delta: timedelta) -> str:
 
 
 # ------------------------------------------------------------ observer ----
-def _app_key(app: str) -> str:
-    """Normalise a process name: lowercase, no .exe, bounded length."""
+def add_activity(app: str, title: str, at: str = "") -> None:
+    """Record an app-switch event. Titles are stored locally only."""
     app = (app or "").strip().lower()
     if app.endswith(".exe"):
         app = app[:-4]
-    return app[:40]
-
-
-def add_activity(app: str, title: str, at: str = "", secs: float = 0) -> None:
-    """Record one app-FOCUS episode (one per app switch, not per tab/title
-    change). secs = how long that app had the floor before the switch."""
-    entry = {"at": at or _now(), "app": _app_key(app), "title": (title or "")[:140]}
-    if secs and secs >= 1:
-        entry["secs"] = max(1, int(round(secs)))
     with _LOCK:
-        _STATE["activity"].append(entry)
+        _STATE["activity"].append(
+            {"at": at or _now(), "app": app[:80], "title": (title or "")[:140]}
+        )
         if len(_STATE["activity"]) > 4000:
             _STATE["activity"] = _STATE["activity"][-4000:]
     save()
 
 
 def get_activity(limit: int = 4000) -> List[Dict[str, Any]]:
-    """Chronological activity episodes (oldest first)."""
+    """Chronological activity events (oldest first)."""
     with _LOCK:
         return list(_STATE["activity"][-limit:])
 
@@ -563,73 +555,6 @@ def clear_activity() -> None:
     with _LOCK:
         _STATE["activity"] = []
     save()
-
-
-# ------------------------------------------------- focus usage ledger ------
-# How long each app (and its window title) held the screen, banked per day.
-# This is what "keeps" the watching: activity rows age out of the reel, but
-# the per-day totals survive restarts and answer "where does my time go?".
-_USAGE_KEEP_DAYS = 45
-_USAGE_MAX_TITLES = 16
-
-
-def _prune_usage_locked() -> None:
-    usage = _STATE.get("usage_days", {})
-    if len(usage) > _USAGE_KEEP_DAYS:
-        for old in sorted(usage)[:-_USAGE_KEEP_DAYS]:
-            usage.pop(old, None)
-
-
-def add_usage(app: str, title: str, secs: float, at: str = "") -> None:
-    """Bank focused seconds under day → app → title. Bounded & cheap (the
-    observer flushes at most every ~45 s, not per poll)."""
-    if secs is None or float(secs) <= 0.3:
-        return
-    day = (at or _now())[:10]
-    app = _app_key(app) or "(unknown)"
-    title = (title or "").strip()[:100] or "(untitled)"
-    with _LOCK:
-        usage = _STATE.setdefault("usage_days", {})
-        apps = usage.setdefault(day, {}).setdefault("apps", {})
-        row = apps.setdefault(app, {"secs": 0.0, "titles": {}})
-        row["secs"] = float(row.get("secs", 0.0)) + float(secs)
-        titles = row.setdefault("titles", {})
-        titles[title] = float(titles.get(title, 0.0)) + float(secs)
-        if len(titles) > _USAGE_MAX_TITLES:  # drop least-used, keep the picture
-            for t in sorted(titles, key=titles.get)[:-_USAGE_MAX_TITLES]:
-                titles.pop(t, None)
-        _prune_usage_locked()
-    save()
-
-
-def usage_today(limit: int = 10) -> List[Dict[str, Any]]:
-    """Today's apps sorted by focused time (desc). Each row carries the top
-    window title so "Chrome — which tab?" is answerable too."""
-    return usage_for(datetime.now().strftime("%Y-%m-%d"), limit)
-
-
-def usage_for(day: str, limit: int = 10) -> List[Dict[str, Any]]:
-    with _LOCK:
-        apps = ((_STATE.get("usage_days") or {}).get(day or "", {})
-                .get("apps") or {})
-        rows = []
-        for app, row in apps.items():
-            titles = row.get("titles") or {}
-            top_title = max(titles, key=titles.get) if titles else ""
-            rows.append({
-                "app": app,
-                "secs": int(round(float(row.get("secs", 0)))),
-                "titles": len(titles),
-                "top_title": (top_title or "")[:80],
-                "top_secs": int(round(titles[top_title])) if top_title else 0,
-            })
-    rows.sort(key=lambda r: -r["secs"])
-    return rows[:limit]
-
-
-def usage_days_count() -> int:
-    with _LOCK:
-        return len(_STATE.get("usage_days") or {})
 
 
 def list_patterns(status: str = "") -> List[Dict[str, Any]]:

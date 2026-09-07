@@ -1,16 +1,10 @@
-"""Observer: watch which apps you use (and for how long) and learn habits.
+"""Observer: watch which apps you use and learn your recurring habits.
 
 Privacy contract (non-negotiable):
-  * records APP-LEVEL focus episodes — process name + window title while that
-    app has the floor, plus its duration. Never keystrokes, never text
-    content, never screenshots (the screenshot timeline is a separate opt-in).
-  * stored locally in jarvis-state.json: ~4000 focus episodes plus a per-day
-    per-app time ledger kept for 45 days.
+  * records APP-LEVEL events only — process name + window title at the moment
+    of a switch. Never keystrokes. Never text. Never screenshots.
+  * stored locally in jarvis-state.json, capped at 4000 events.
   * OFF by default; toggled live with "start watching what I do".
-
-One row = one app-focus episode (tab switches inside an app update the title,
-they don't spam the reel). Seconds bank into state.usage_days so the watching
-is KEPT across restarts.
 
 Learning contract (honest scope): this mines your app-switch timeline for
 REPEATED habits — sequences ("Outlook then Teams then Spotify") seen on
@@ -219,155 +213,27 @@ def observer_enabled() -> bool:
 def set_observer(on: bool) -> None:
     state.set_flag("observe", "1" if on else "0")
     if on:
-        state.add_notification("👁 Observer on — I'll track which apps you use and for how long. "
+        state.add_notification("👁 Observer on — I'll quietly note which apps you use. "
                                "Say 'stop watching' any time.")
-    else:
-        flush_usage()  # don't lose the seconds banked so far
-        with _focus_lock:
-            _focus.update(app="", title="", start=0.0, app_start=0.0)
-
-
-# ---------------------------------------------------- focus tracking ------
-# Activity used to append one event per (app, TITLE) change — so every
-# browser-tab switch spammed the reel with rows of tabs and nothing recorded
-# how long you stayed anywhere. Now one row is one APP-FOCUS episode; tab
-# switches inside an app just move the timer onto the new title. Seconds also
-# bank into state.usage_days (per day, per app, per title) so the watching is
-# KEPT across restarts instead of evaporating with the reel.
-_focus_lock = threading.Lock()
-_focus = {"app": "", "title": "", "start": 0.0, "app_start": 0.0}
-_pending: Dict[tuple, float] = {}   # (app, title) -> seconds awaiting storage
-_last_sample = 0.0
-_last_flush = 0.0
-_FLUSH_EVERY = 45.0    # how often banked seconds hit the state store
-_QUIET_GAP = 300.0     # longer gap in samples = sleep/lock; never count it
-
-
-def _app_key(app: str) -> str:
-    app = (app or "").strip().lower()
-    if app.endswith(".exe"):
-        app = app[:-4]
-    return app[:40]
-
-
-def current_focus() -> Dict[str, Any]:
-    """What the observer is looking at now + how long (seconds) this app has
-    had the floor. {} when off / nothing focused."""
-    with _focus_lock:
-        if not _focus.get("app") or not _focus.get("app_start"):
-            return {}
-        import time as _t
-        return {"app": _focus["app"], "title": _focus.get("title", ""),
-                "since": int(_focus["app_start"]),
-                "secs": max(0, int(_t.time() - _focus["app_start"]))}
-
-
-def _episode_iso(ts: float) -> str:
-    if not ts:
-        return ""
-    from datetime import datetime as _dt
-    return _dt.fromtimestamp(ts).isoformat(timespec="seconds")
-
-
-def _bank_pair_locked(until: float) -> None:
-    """Move the current (app,title) pair's awake seconds into _pending."""
-    if not _focus.get("app"):
-        return
-    pair = (_focus["app"], (_focus.get("title") or "").strip()[:100] or "(untitled)")
-    start = _focus.get("start") or 0.0
-    if until > start:
-        _pending[pair] = _pending.get(pair, 0.0) + (until - start)
-        _focus["start"] = until
-
-
-def _flush_locked(now: float) -> None:
-    """Push _pending into the state store. Assumes _focus_lock is held."""
-    global _last_flush
-    _last_flush = now
-    pend = dict(_pending)
-    _pending.clear()
-    for (app, title), secs in pend.items():
-        if secs > 0.3:
-            try:
-                state.add_usage(app, title, secs)
-            except Exception:
-                pass  # a usage write must never break the watcher
-
-
-def flush_usage() -> None:
-    """Write any banked focus seconds to the store now (toggle-off, exit…)."""
-    import time as _t
-    with _focus_lock:
-        now = _t.time()
-        if _focus.get("app") and _focus.get("start"):
-            # include the current pair's time up to right now
-            _bank_pair_locked(now)
-            _focus["start"] = now
-        _flush_locked(now)
-
-
-def record_sample(app: str, title: str, now: float = None) -> None:
-    """Feed one observer tick. Emits an activity row only when the foreground
-    APP changes; a title change inside an app (a new tab) just switches the
-    timer and is counted as time for that app, never a new reel row."""
-    import time as _t
-    now = _t.time() if now is None else now
-    app = _app_key(app)
-    title = (title or "").strip()
-    global _last_sample
-    with _focus_lock:
-        gap = (now - _last_sample) if _last_sample else 0.0
-        _last_sample = now
-        awake_until = now if gap <= _QUIET_GAP else now - gap
-
-        if app and app == _focus.get("app"):
-            # Same app: bank the old title's slice, keep the row running.
-            if title and title != _focus.get("title"):
-                _bank_pair_locked(awake_until)
-                _focus["title"] = title
-            return
-
-        # Foreground app changed (or first / lock-screen sample).
-        if _focus.get("app"):
-            _bank_pair_locked(awake_until)
-            started = _focus.get("app_start") or 0.0
-            if awake_until - started >= 1.0:  # ignore sub-second flickers
-                state.add_activity(_focus["app"], _focus.get("title") or "",
-                                   at=_episode_iso(started),
-                                   secs=awake_until - started)
-        if app:
-            _focus.update(app=app, title=title, start=now, app_start=now)
-        else:
-            _focus.update(app="", title="", start=0.0, app_start=0.0)
-        if _pending and (now - _last_flush >= _FLUSH_EVERY or len(_pending) >= 12):
-            _flush_locked(now)
 
 
 def watch_loop() -> None:
-    """Daemon: sample the focused window (focus episodes + per-day usage),
-    mine habits every ~10 min, and run the independent eyes EVERY tick —
-    the typing log and screenshot timeline are separate toggles and must work
-    with the app-observer switched off (they used to starve while it was)."""
+    """Daemon: sample the focused window; mine patterns every ~10 min."""
     import time as _t
-    last_mine = 0.0
+    last_app, last_title, last_mine = "", "", 0.0
     while True:
         try:
-            now = _t.time()
             if observer_enabled():
                 app, title = active_window()
-                record_sample(app, title, now)
-                if now - _last_flush >= _FLUSH_EVERY:
-                    flush_usage()
-                if now - last_mine > 600:
-                    last_mine = now
+                if app and (app, title) != (last_app, last_title):
+                    state.add_activity(app, title)
+                    last_app, last_title = app, title
+                tick_observer()
+                if _t.time() - last_mine > 600:
+                    last_mine = _t.time()
                     mine_patterns()
             else:
-                if _focus.get("app") or _pending:
-                    flush_usage()
-                    with _focus_lock:
-                        _focus.update(app="", title="", start=0.0, app_start=0.0)
-                last_mine = 0.0
-            tick_observer()  # self-gated: typing log / screenshots / daily wipe
+                last_app, last_title = "", ""  # don't record the toggle moment
             autolock_tick()  # independent of the observer switch
             clipboard_tick()  # bank newly-copied text
         except Exception:
@@ -457,23 +323,27 @@ def mine_patterns(events: Optional[List[Dict[str, Any]]] = None,
 
 
 def today_summary() -> str:
-    today = datetime.now().date().isoformat()
-    usage = state.usage_for(today, limit=6)
-    if not usage:
+    events = state.get_activity()
+    if not events:
         return ("I haven't watched anything yet. Say 'start watching what I do' "
-                "and I'll begin tracking which apps you use and for how long "
-                "(never keystrokes).")
-    events = [e for e in state.get_activity() if e["at"].startswith(today)]
-    names = ", ".join(
-        f"{u['app']} ({int(u['secs'] / 60)}m)" for u in usage if u["secs"] >= 60
-    ) or ", ".join(f"{u['app']} ({u['secs']}s)" for u in usage)
+                "and I'll begin noting app usage (never keystrokes).")
+    today = datetime.now().date().isoformat()
+    seen = [e for e in events if e["at"].startswith(today)]
+    if not seen:
+        return "I've observed no activity yet today."
+    apps: Dict[str, int] = {}
+    for e in seen:
+        name = e["app"].lower()
+        apps[name] = apps.get(name, 0) + 1
+    top = sorted(apps.items(), key=lambda kv: -kv[1])[:6]
+    names = ", ".join(f"{a} ({n}×)" for a, n in top)
     try:
-        first = datetime.fromisoformat(events[0]["at"]).strftime("%H:%M")
-        last = datetime.fromisoformat(events[-1]["at"]).strftime("%H:%M")
+        first = datetime.fromisoformat(seen[0]["at"]).strftime("%H:%M")
+        last = datetime.fromisoformat(seen[-1]["at"]).strftime("%H:%M")
     except Exception:
         first = last = "?"
-    return (f"Today ({first} → {last}), focused time by app: {names}. "
-            f"{len(events)} app switches.")
+    return (f"Today ({first} → {last}), your most-visited apps: {names}. "
+            f"{len(seen)} switches observed.")
 
 
 # ------------------------------------------------------- typed text --------

@@ -140,11 +140,10 @@ def main() -> int:
         assert observe.observer_enabled()
         assert c.get("/api/watch/shot?name=../../etc/passwd").status_code == 400
         # v1.2.8 incremental rendering contract: /api/watch carries only what
-        # the panel renders (≤20 events) plus today's aggregates; served shots
-        # are cache-immutable so the UI never re-downloads a frame twice.
+        # the panel renders (≤14 events), and served shots are cache-immutable
+        # so the UI never re-downloads a frame it already has.
         w = c.get("/api/watch").json()
-        assert len(w["activity"]) <= 20, len(w["activity"])
-        assert "usage_today" in w and "focus_since" in w and "history_days" in w
+        assert len(w["activity"]) <= 14, len(w["activity"])
         shot = _shots_dir() / "shot-20260903-031506.png"
         shot.write_bytes(b"fakeframe")
         try:
@@ -155,53 +154,8 @@ def main() -> int:
         finally:
             shot.unlink(missing_ok=True)
         state._STATE["flags"] = {}
-        state.save()  # the observer toggle was a test — don't leave it armed
 
     check("watcher toggles live + shot route hardened + panel payloads bounded", _watch)
-
-    def _watch_usage_tracks_focus_not_tabs():
-        """One row per APP-focus episode (tab switches don't spam the reel) and
-        the focused seconds are KEPT in today's usage store."""
-        from jarvis import observe as O
-        saved_act = state._STATE.get("activity", [])
-        saved_usage = state._STATE.get("usage_days", {})
-        try:
-            state._STATE["activity"] = []
-            state._STATE["usage_days"] = {}
-            with O._focus_lock:
-                O._focus.update(app="", title="", start=0.0, app_start=0.0)
-                O._pending.clear()
-                O._last_sample = 0.0
-                O._last_flush = 0.0
-
-            # t=1000.. : Chrome on a tab; tab-switch at 1004 (title change);
-            # app switch to Code at 1012; lock screen at 1016.
-            O.record_sample("chrome.exe", "Reddit — news", now=1000)
-            O.record_sample("chrome.exe", "YouTube — music", now=1004)
-            O.record_sample("chrome.exe", "YouTube — music", now=1008)
-            O.record_sample("Code.exe", "jarvis/state.py", now=1012)
-            O.record_sample("", "", now=1016)
-            O.flush_usage()
-
-            rows = state.get_activity()
-            apps = [r["app"] for r in rows]
-            # Tab switch at 1004 produced NO new row — only the two app
-            # episodes (chrome 1000→1012 = 12s, code 1012→1016 = 4s).
-            assert apps == ["chrome", "code"], apps
-            assert rows[0]["secs"] == 12 and rows[1]["secs"] == 4, rows
-            today = {u["app"]: u["secs"] for u in state.usage_today()}
-            assert today.get("chrome") == 12 and today.get("code") == 4, today
-        finally:
-            state._STATE["activity"] = saved_act
-            state._STATE["usage_days"] = saved_usage
-            with O._focus_lock:
-                O._focus.update(app="", title="", start=0.0, app_start=0.0)
-                O._pending.clear()
-                O._last_sample = 0.0
-                O._last_flush = 0.0
-            state.save()  # don't leave the simulated frames in the store
-
-    check("focus episodes (not tabs) drive the reel + today's usage", _watch_usage_tracks_focus_not_tabs)
 
     def _settings():
         assert c.post("/api/settings",

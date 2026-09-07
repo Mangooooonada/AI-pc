@@ -682,27 +682,7 @@ function tickClock() {
 // touch a panel when its data actually changed.
 let WATCH_BUSY = false;
 let WATCH_AGAIN = false;
-let WATCH_FOCUS_SINCE = 0;  // epoch s the current app got the floor (for the 1s ticker)
-let WATCH_SIG = { toggles: "", focus: "", usage: "", clipboard: "", activity: "", shots: "" };
-
-function fmtDur(secs) {
-  secs = Math.max(0, Math.round(secs || 0));
-  if (!secs) return "0m";
-  if (secs < 60) return secs + "s";
-  const h = Math.floor(secs / 3600), m = Math.round((secs % 3600) / 60);
-  return h ? `${h}h ${String(m).padStart(2, "0")}m` : m + "m";
-}
-function fmtDurFull(secs) {
-  secs = Math.max(0, Math.floor(secs || 0));
-  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
-  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
-           : `${m}:${String(s).padStart(2, "0")}`;
-}
-setInterval(() => {  // second-hand for the "right now" timer — local, no API
-  const t = $("#watch-focus-time");
-  if (t && WATCH_FOCUS_SINCE && $$(".view.active")[0]?.dataset.view === "watcher")
-    t.textContent = fmtDurFull(Date.now() / 1000 - WATCH_FOCUS_SINCE);
-}, 1000);
+let WATCH_SIG = { toggles: "", focus: "", clipboard: "", activity: "", shots: "" };
 
 function watchChanged(key, value) {
   const sig = JSON.stringify(value ?? null);
@@ -751,30 +731,10 @@ async function loadWatch() {
     }
 
     if (watchChanged("focus", d.focused || {})) {
-      WATCH_FOCUS_SINCE = (d.observer && d.focus_since) ? d.focus_since : 0;
       $("#watch-focus").innerHTML = d.observer && d.focused?.app
         ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
-           <div class="st-note" style="font-size:11.5px">${esc(d.focused.title || "(no window title)")}</div>
-           <div class="watch-focus-time" id="watch-focus-time">${WATCH_FOCUS_SINCE ? fmtDurFull(Date.now() / 1000 - WATCH_FOCUS_SINCE) : ""}</div>
-           <div class="st-note" style="margin-top:-4px">on this app — it's banking minutes in “Today by app”</div>`
-        : `<div class="st-note">Nothing yet — flip 👁 Observer on and the app you're in (with a live timer) appears here in seconds. Switching browser tabs won't spam this card; only apps count as new focus.</div>`;
-    }
-    if (watchChanged("usage", d.usage_today || [])) {
-      const usage = d.usage_today || [];
-      const maxU = Math.max(1, ...usage.map((u) => u.secs));
-      $("#watch-usage").innerHTML = usage.length
-        ? usage.map((u) =>
-          `<div class="usage-item">
-             <div class="usage-row">
-               <span class="usage-app" title="${esc(u.app)}">${esc(u.app)}</span>
-               <span class="usage-bar"><i style="width:${Math.max(3, Math.round((u.secs / maxU) * 100))}%"></i></span>
-               <span class="usage-min">${fmtDur(u.secs)}</span>
-             </div>
-             <div class="usage-title">${u.top_title ? esc((u.top_title || "").slice(0, 46)) : ""}</div>
-           </div>`).join("")
-        : `<span class="st-note">No time tracked yet — flip 👁 Observer on and focused minutes start banking here, kept day by day across restarts.</span>`;
-      const us = $("#watch-usage-sub");
-      if (us) us.textContent = d.history_days ? `${d.history_days} day${d.history_days === 1 ? "" : "s"} kept` : "";
+           <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`
+        : `<div class="st-note">Nothing — the observer is off${d.observer ? " (or the desktop can't be read here)" : ""}.</div>`;
     }
     if (watchChanged("clipboard", d.clipboard_recent || [])) {
       $("#watch-clipboard").innerHTML = (d.clipboard_recent || []).slice().reverse().map((c) =>
@@ -785,8 +745,8 @@ async function loadWatch() {
     if (watchChanged("activity", d.activity || [])) {
       $("#watch-activity").innerHTML = (d.activity || []).slice().reverse().map((a) =>
         `<div class="li"><span>${esc(a.app || "?")}</span>
-         <span class="st-note">${esc((a.title || "").slice(0, 52))} · ${fmtWhen(a.at)}${a.secs ? " · " + fmtDur(a.secs) : ""}</span></div>`
-      ).join("") || '<div class="li"><span class="st-note">No focus switches yet — one row per app, so a long Chrome run is ONE row, not a tab flood.</span></div>';
+         <span class="st-note">${esc((a.title || "").slice(0, 60))} · ${fmtWhen(a.at)}</span></div>`
+      ).join("") || '<div class="li"><span class="st-note">No sightings yet.</span></div>';
     }
 
     $("#watch-shot-count").textContent = d.shots_on ? `(${d.shots_total} on disk, last 8 shown)` : "(off)";
@@ -1482,21 +1442,6 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
       fellBack || s.notes?.length ? "warn" : "",
     );
     loadStatus(); loadLLMs(); loadAgents();
-  };
-  const diagBtn = $("#btn-diag");
-  if (diagBtn) diagBtn.onclick = async () => {
-    diagBtn.disabled = true;
-    try {
-      const d = await api("/api/providers/diagnose", { timeout: 30000 });
-      const ps = d.providers || [];
-      const lines = ps.map((p) =>
-        `${p.ok ? "✅" : "❌"} ${p.name}: ${p.detail}${p.ok ? ` (${p.latency_ms}ms)` : ""}`);
-      toast(lines.join("\n"), ps.some((p) => !p.ok) ? "warn" : "");
-    } catch (err) {
-      toast("Diagnose failed: " + (err && err.message || err), "err");
-    } finally {
-      diagBtn.disabled = false;
-    }
   };
   $("#search").oninput = (e) => {
     const q = e.target.value.trim();
