@@ -3,6 +3,25 @@
    ══════════════════════════════════════════════════════════════ */
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
+
+/* Phone/LAN pairing: the QR link carries ?key=… — keep it and send it on
+   every API call so network mode's lock accepts us. */
+(() => {
+  const fromUrl = new URLSearchParams(location.search).get("key");
+  if (fromUrl) {
+    localStorage.setItem("jarvis.key", fromUrl);
+    history.replaceState({}, "", location.pathname);  // don't leave it in history
+  }
+  const rawFetch = window.fetch.bind(window);
+  window.fetch = (url, opts = {}) => {
+    const key = localStorage.getItem("jarvis.key");
+    if (key && typeof url === "string" && url.startsWith("/api")) {
+      opts = { ...opts, headers: { ...(opts.headers || {}), "X-Jarvis-Key": key } };
+    }
+    return rawFetch(url, opts);
+  };
+})();
+
 const api = async (path, opts) => (await fetch(path, opts)).json();
 const post = (path, body) =>
   api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -36,8 +55,360 @@ const ICON = {
   camera:'<path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3Zm3 5a6 6 0 1 1-6 6 6 6 0 0 1 6-6Z"/>',
   power:'<path d="M11 2v10h2V2Zm-3.6 3A9 9 0 1 0 21 12a9 9 0 0 0-3.4-7l-1.4 1.5A7 7 0 1 1 8.8 6.5Z"/>',
   check:'<path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4Z"/>',
+  palette:'<path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2a2 2 0 0 1 2-2h2.5A4.5 4.5 0 0 0 22 11c-.5-5-4.7-9-10-9Zm-5.5 9A1.5 1.5 0 1 1 8 9.5 1.5 1.5 0 0 1 6.5 11Zm3-4A1.5 1.5 0 1 1 11 5.5 1.5 1.5 0 0 1 9.5 7Zm5 0A1.5 1.5 0 1 1 16 5.5 1.5 1.5 0 0 1 14.5 7Zm3 4a1.5 1.5 0 1 1 1.5-1.5 1.5 1.5 0 0 1-1.5 1.5Z"/>',
 };
 const svg = (k) => `<svg viewBox="0 0 24 24">${ICON[k] || ICON.core}</svg>`;
+
+/* ───────────────────── interface studio (theming) ───────────────────── */
+const THEME_FIELDS = [
+  ["Accents", [
+    { k: "accent",     label: "Accent (primary)", type: "color" },
+    { k: "accentDeep", label: "Accent (deep)",    type: "color" },
+    { k: "accentDim",  label: "Accent (dim)",     type: "color" },
+  ]],
+  ["Background", [
+    { k: "bg0",        label: "Base background", type: "color" },
+    { k: "glowTop",    label: "Glow — top",      type: "color" },
+    { k: "glowBottom", label: "Glow — bottom",   type: "color" },
+    { k: "panelTint",  label: "Panel tint",      type: "color" },
+  ]],
+  ["Text", [
+    { k: "text",  label: "Text",       type: "color" },
+    { k: "muted", label: "Muted text", type: "color" },
+    { k: "dim",   label: "Faint text", type: "color" },
+  ]],
+  ["Status colours", [
+    { k: "ok",     label: "Success",            type: "color" },
+    { k: "warn",   label: "Warning",            type: "color" },
+    { k: "hot",    label: "Danger / recording", type: "color" },
+    { k: "violet", label: "Violet accent",      type: "color" },
+    { k: "amber",  label: "Amber accent",       type: "color" },
+  ]],
+  ["Finish", [
+    { k: "panelOpacity", label: "Panel opacity",    type: "range", min: 0.2, max: 1,  step: 0.01, fmt: (v) => Math.round(v * 100) + "%" },
+    { k: "glow",         label: "Glow intensity",   type: "range", min: 0,   max: 2,  step: 0.05, fmt: (v) => "×" + (+v).toFixed(2) },
+    { k: "radius",       label: "Corner roundness", type: "range", min: 0,   max: 20, step: 1,    fmt: (v) => v + "px" },
+    { k: "fontSize",     label: "Text size",        type: "range", min: 12,  max: 17, step: 0.5,  fmt: (v) => v + "px" },
+  ]],
+  ["Layout", [
+    { k: "sidebar",   label: "Sidebar width",     type: "range", min: 200, max: 330, step: 2, fmt: (v) => v + "px" },
+    { k: "topbar",    label: "Top bar height",    type: "range", min: 50,  max: 86,  step: 1, fmt: (v) => v + "px" },
+    { k: "statusbar", label: "Bottom bar height", type: "range", min: 46,  max: 80,  step: 1, fmt: (v) => v + "px" },
+  ]],
+  ["Effects", [
+    { k: "scanlines",   label: "Scanline overlay",  type: "toggle" },
+    { k: "scanOpacity", label: "Scanline strength", type: "range", min: 0, max: 0.9, step: 0.05, fmt: (v) => Math.round(v * 100) + "%" },
+    { k: "vignette",    label: "Vignette",          type: "toggle" },
+    { k: "motion",      label: "Animations",        type: "toggle" },
+  ]],
+];
+
+const THEME_DEFAULTS = {
+  accent: "#3ce0ff", accentDeep: "#12a8cf", accentDim: "#1c6b85",
+  bg0: "#020610", glowTop: "#072a44", glowBottom: "#06202f", panelTint: "#070a18",
+  text: "#d3ecf8", muted: "#5f8ba6", dim: "#3d6479",
+  ok: "#38f5a8", warn: "#ffb545", hot: "#ff5f7e", violet: "#a06bff", amber: "#ffcf5c",
+  panelOpacity: 0.72, glow: 1, radius: 12, fontSize: 14,
+  sidebar: 262, topbar: 64, statusbar: 60,
+  scanlines: true, scanOpacity: 0.5, vignette: true, motion: true,
+};
+
+const THEME_PRESETS = [
+  ["Jarvis Classic", {}],
+  ["Iron Legion", { accent: "#ff5340", accentDeep: "#c22a1c", accentDim: "#7c2a1e", bg0: "#0a0304", glowTop: "#3d0f0a", glowBottom: "#260a06", panelTint: "#180a08", text: "#ffe9e0", muted: "#a6756b", dim: "#6e463c", hot: "#ff8a3d" }],
+  ["Matrix Ops", { accent: "#41ff8f", accentDeep: "#14b85c", accentDim: "#1d7a4a", bg0: "#010a05", glowTop: "#06341c", glowBottom: "#042313", panelTint: "#05170d", text: "#d9ffe9", muted: "#5f8f74", dim: "#3a6649", hot: "#ff5f7e" }],
+  ["Ultraviolet", { accent: "#b07aff", accentDeep: "#7c4fd0", accentDim: "#5a3a8f", bg0: "#08031a", glowTop: "#241040", glowBottom: "#150a2b", panelTint: "#0e0722", text: "#eee6ff", muted: "#8b7bb3", dim: "#584a7a" }],
+  ["Solar Dusk", { accent: "#ffb545", accentDeep: "#cf7a12", accentDim: "#8f5d1c", bg0: "#0d0703", glowTop: "#3a2408", glowBottom: "#241605", panelTint: "#171008", text: "#ffefd9", muted: "#a68a63", dim: "#6e5a3c" }],
+];
+
+const THEME_KEY = "jarvis.theme.v1";
+const THEME = { values: { ...THEME_DEFAULTS }, rgb: {} };
+
+function hexRgb(h) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(h || "").trim());
+  if (!m) return [255, 255, 255];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const lighten = (rgb, t) => rgb.map((c) => Math.round(c + (255 - c) * t));
+const mixRgbStr = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t)).join(",");
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const trgba = (rgb, a) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${clamp01(a)})`;
+
+function applyTheme(save = true) {
+  const v = THEME.values, s = document.documentElement.style;
+  const acc = hexRgb(v.accent), deep = hexRgb(v.accentDeep), dimc = hexRgb(v.accentDim);
+  const pan = hexRgb(v.panelTint);
+  THEME.rgb = {
+    acc, deep, dim: dimc,
+    ok: hexRgb(v.ok), warn: hexRgb(v.warn), hot: hexRgb(v.hot),
+    violet: hexRgb(v.violet), amber: hexRgb(v.amber),
+    lite: lighten(acc, 0.55), liteHot: lighten(hexRgb(v.hot), 0.35),
+  };
+  s.setProperty("--cy", v.accent);            s.setProperty("--cy-rgb", acc.join(","));
+  s.setProperty("--cy-2", v.accentDeep);      s.setProperty("--cy-dim", v.accentDim);
+  s.setProperty("--bg-0", v.bg0);             s.setProperty("--glow-1", v.glowTop);
+  s.setProperty("--glow-2", v.glowBottom);
+  s.setProperty("--panel", trgba(pan, v.panelOpacity));
+  s.setProperty("--panel-2", `rgba(${mixRgbStr(pan, acc, 0.28)},${clamp01(v.panelOpacity * 0.78)})`);
+  s.setProperty("--txt", v.text);             s.setProperty("--muted", v.muted);
+  s.setProperty("--dim", v.dim);
+  s.setProperty("--ok", v.ok);                s.setProperty("--warn", v.warn);
+  s.setProperty("--hot", v.hot);              s.setProperty("--violet", v.violet);
+  s.setProperty("--amber", v.amber);
+  s.setProperty("--line", trgba(acc, 0.16));  s.setProperty("--line-2", trgba(acc, 0.3));
+  s.setProperty("--glow", +v.glow);
+  s.setProperty("--rc", v.radius + "px");     s.setProperty("--rm", Math.max(0, +v.radius - 3) + "px");
+  s.setProperty("--sb", v.sidebar + "px");    s.setProperty("--top", v.topbar + "px");
+  s.setProperty("--bot", v.statusbar + "px"); s.setProperty("--fs", v.fontSize + "px");
+  document.body.classList.toggle("no-scan", !v.scanlines);
+  document.body.classList.toggle("no-vig", !v.vignette);
+  document.body.classList.toggle("calm", !v.motion);
+  const scan = document.querySelector(".scanlines");
+  if (scan) scan.style.opacity = v.scanlines ? v.scanOpacity : 0;
+  if (save) localStorage.setItem(THEME_KEY, JSON.stringify(v));
+}
+
+function initTheme() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(THEME_KEY) || "{}");
+    Object.assign(THEME.values, THEME_DEFAULTS, saved);
+  } catch { /* corrupt theme blob → defaults */ }
+  applyTheme(false);
+}
+
+function buildStudio() {
+  const root = $("#studio");
+  if (!root) return;
+  const v = THEME.values;
+  const flat = THEME_FIELDS.flatMap(([, fs]) => fs);
+  const ctl = (f) => {
+    if (f.type === "color")
+      return `<label class="st-ctl"><span>${f.label}</span><code data-lab="${f.k}">${v[f.k]}</code><input type="color" data-tk="${f.k}" value="${v[f.k]}"></label>`;
+    if (f.type === "range")
+      return `<label class="st-ctl"><span>${f.label}</span><b data-lab="${f.k}">${f.fmt(+v[f.k])}</b><input type="range" data-tk="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${v[f.k]}"></label>`;
+    return `<label class="st-ctl"><span>${f.label}</span><button type="button" class="st-toggle ${v[f.k] ? "on" : ""}" data-tk="${f.k}" title="${f.label}"></button></label>`;
+  };
+  root.innerHTML =
+    `<div class="st-presets">${THEME_PRESETS.map(([n], i) => {
+      const pv = { ...THEME_DEFAULTS, ...THEME_PRESETS[i][1] };
+      return `<button type="button" class="st-preset" data-preset="${i}"><i style="background:linear-gradient(135deg,${pv.accent} 0 55%,${pv.bg0} 55% 100%)"></i>${n}</button>`;
+    }).join("")}</div>` +
+    THEME_FIELDS.map(([g, fields]) =>
+      `<div class="st-group"><h3>${g}</h3><div class="st-rows">${fields.map(ctl).join("")}</div></div>`).join("") +
+    `<p class="st-note">Every change applies instantly and is stored on this machine (<code>localStorage</code>),
+     so your theme survives restarts. <b>Copy theme</b> exports it as JSON — paste it on another PC to move it.</p>`;
+
+  root.querySelectorAll("[data-preset]").forEach((b) => (b.onclick = () => {
+    const i = +b.dataset.preset;
+    THEME.values = { ...THEME_DEFAULTS, ...THEME_PRESETS[i][1] };
+    applyTheme(); buildStudio();
+    toast(`Theme applied: ${THEME_PRESETS[i][0]}`);
+  }));
+  root.querySelectorAll('input[type="color"][data-tk]').forEach((el) => (el.oninput = () => {
+    THEME.values[el.dataset.tk] = el.value;
+    const lab = root.querySelector(`[data-lab="${el.dataset.tk}"]`);
+    if (lab) lab.textContent = el.value;
+    applyTheme();
+  }));
+  root.querySelectorAll('input[type="range"][data-tk]').forEach((el) => (el.oninput = () => {
+    const f = flat.find((x) => x.k === el.dataset.tk);
+    THEME.values[el.dataset.tk] = parseFloat(el.value);
+    const lab = root.querySelector(`[data-lab="${el.dataset.tk}"]`);
+    if (lab && f) lab.textContent = f.fmt(parseFloat(el.value));
+    applyTheme();
+  }));
+  root.querySelectorAll(".st-toggle[data-tk]").forEach((el) => (el.onclick = () => {
+    THEME.values[el.dataset.tk] = !THEME.values[el.dataset.tk];
+    el.classList.toggle("on", !!THEME.values[el.dataset.tk]);
+    applyTheme();
+  }));
+}
+
+/* ─────────────────────────── settings ─────────────────────────── */
+async function loadSettings() {
+  const d = await api("/api/settings");
+  const root = $("#settings-groups");
+  if (!root || !d.sections) return;
+  const flat = {};
+  const chunks = [];
+
+  // App-side setting that only lives in the browser: read replies aloud.
+  const speakOn = localStorage.getItem("jarvis.speak") !== "off";
+  const listenOn = localStorage.getItem("jarvis.listen") === "on";
+  let bootState = null, netState = null;
+  try { bootState = await api("/api/autostart"); } catch {}
+  try { netState = await api("/api/network"); } catch {}
+  const netQr = netState?.enabled && netState.url
+    ? `<div class="st-net">${netState.qr ? `<img src="${netState.qr}" alt="QR" class="st-qr">` : ""}
+       <div class="st-net-meta"><code>${esc(netState.url)}</code>
+         <button type="button" class="st-copy" id="net-copy">copy link</button>
+         <span>Same Wi-Fi only. Locked with a pairing key${netState.qr ? "" : " (install the qrcode package for the QR)"}. Takes full effect next launch.</span></div></div>`
+    : "";
+  chunks.push(`<div class="st-group"><h3>App</h3><div class="st-rows">
+    <label class="st-ctl"><span>Read Jarvis's replies aloud (browser voice)</span>
+      <button type="button" class="st-toggle ${speakOn ? "on" : ""}" id="set-speak"></button></label>
+    <label class="st-ctl"><span>Always listen for the wake word</span>
+      <button type="button" class="st-toggle ${listenOn ? "on" : ""}" id="set-listen"></button></label>${bootState && bootState.supported ? `
+    <label class="st-ctl"><span>Start with Windows (tucks into the tray)</span>
+      <button type="button" class="st-toggle ${bootState.enabled ? "on" : ""}" id="set-boot"></button></label>` : ""}
+    <label class="st-ctl"><span>Control from my phone (local network)</span>
+      <button type="button" class="st-toggle ${netState?.enabled ? "on" : ""}" id="set-net"></button></label>
+    ${netQr}
+  </div><p class="st-note" style="margin-top:8px">Closing the window hides Jarvis to the <b>system tray</b> (quit from its icon). <b>Ctrl+J</b> summons Jarvis from anywhere. Theme, colours, glow and layout live in the <b>Interface Studio</b> (top right button).</p></div>`);
+
+  // One-click brain presets: fill the Brain section's cloud fields for them.
+  const presets = [
+    ["⚡ Groq as the CASCADE-brain (free)", "Ollama stays king; Groq answers when it sulks",
+     { JARVIS_PROVIDER: "auto", OPENAI_BASE_URL: "https://api.groq.com/openai/v1", OPENAI_MODEL: "llama-3.3-70b-versatile" }],
+    ["⚡ Groq as the PRIMARY brain", "70B cloud mind answers everything (shielded)",
+     { JARVIS_PROVIDER: "openai", OPENAI_BASE_URL: "https://api.groq.com/openai/v1", OPENAI_MODEL: "llama-3.3-70b-versatile" }],
+    ["🧠 OpenAI — paid, top tier", "key at platform.openai.com",
+     { JARVIS_PROVIDER: "openai", OPENAI_BASE_URL: "https://api.openai.com/v1", OPENAI_MODEL: "gpt-4o-mini" }],
+    ["🏠 Ollama — local & 100% private", "uses your installed models",
+     { JARVIS_PROVIDER: "ollama" }],
+    ["🛰 Remote Jarvis — a Jarvis running elsewhere", "its URL + pairing key below",
+     { JARVIS_PROVIDER: "remote" }],
+  ];
+  chunks.push(`<div class="st-group"><h3>BRAIN PRESETS</h3><div class="st-rows">
+    ${presets.map((p, i) => `<button type="button" class="st-copy st-preset" data-preset="${i}">${p[0]}<span class="st-preset-sub">${p[1]}</span></button>`).join("")}
+    <div class="st-arm">
+      <strong>🧠 Arm the second mind in 60 seconds:</strong>
+      <a class="st-arm-link" id="groq-get">1 · get a free Groq key ↗</a>
+      <input class="st-input" id="groq-key" placeholder="2 · paste gsk_..." autocomplete="off" spellcheck="false">
+      <button type="button" id="groq-arm">3 · Test & arm</button>
+      <div class="st-note" id="groq-arm-note">Guarded shield stays on — your name, city, age and Panda never leave this PC.</div>
+    </div>
+  </div><p class="st-note" style="margin-top:8px">One click rewires the Brain section below. For cloud brains, paste your key into <b>Cloud brain API key</b> after. The current brain shows in <b>AI Core</b>. Privacy guard is watching cloud traffic (Settings → Safety).</p></div>`);
+
+  for (const sec of d.sections) {
+    const rows = sec.fields.map((f) => {
+      flat[f.key] = f;
+      if (f.kind === "bool")
+        return `<label class="st-ctl ${f.danger ? "danger" : ""}"><span>${esc(f.label)}</span>
+          <button type="button" class="st-toggle ${f.value ? "on" : ""}" data-set="${f.key}"></button></label>`;
+      if (f.kind === "range")
+        return `<label class="st-ctl"><span>${esc(f.label)}</span><b data-lab="${f.key}">${f.value}${f.unit || ""}</b>
+          <input type="range" data-set="${f.key}" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.value}"></label>`;
+      const kind = f.kind === "number" ? "number" : "text";
+      const bounds = f.kind === "number" ? ` min="${f.min}" max="${f.max}" step="${f.step}"` : "";
+      return `<label class="st-ctl"><span>${esc(f.label)}</span>
+        <input class="st-input" type="${kind}" data-set="${f.key}" value="${esc(String(f.value))}"${bounds} placeholder="${esc(f.placeholder || "")}"></label>`;
+    }).join("");
+    chunks.push(`<div class="st-group"><h3>${esc(sec.section.toUpperCase())}</h3>
+      <div class="st-rows">${rows}</div>
+      <p class="st-note" style="margin-top:8px">${esc(sec.blurb)}</p></div>`);
+  }
+  // Rejected-credential banner: dead keys stopped posing as brains.
+  const deadBanner = (d.dead_keys || []).length
+    ? `<div class="dead-keys"><b>🔑 Rejected credential${(d.dead_keys || []).length > 1 ? "s" : ""}:</b> ` +
+      (d.dead_keys || []).map((k) =>
+        `<span class="dk-pill">${esc(k)}</span><button class="dk-clear" data-deadclear="${esc(k)}">delete it</button>`
+      ).join(" ") +
+      ` <span class="st-note">— these brains 401'd and are blacklisted until the key changes. Deleting stops the error storms.</span></div>`
+    : "";
+  root.innerHTML = deadBanner + chunks.join("");
+  root.querySelectorAll("[data-deadclear]").forEach((b) => (b.onclick = async () => {
+    const prov = b.dataset.deadclear;
+    const field = { openai: "OPENAI_API_KEY", remote: "JARVIS_REMOTE_KEY" }[prov];
+    if (!field) return toast(`Clear ${prov}'s key in the Brain section below.`, "warn");
+    const r = await post("/api/settings", { updates: { [field]: "" } });
+    if (r.ok) { toast(`${prov} key purged — it will never 401 again.`); loadSettings(); loadStatus(); }
+    else toast(r.error || "Couldn't clear the key", "err");
+  }));
+
+  $("#set-speak").onclick = (e) => {
+    SPEAK_BACK = !SPEAK_BACK;
+    localStorage.setItem("jarvis.speak", SPEAK_BACK ? "on" : "off");
+    e.currentTarget.classList.toggle("on", SPEAK_BACK);
+    if (!SPEAK_BACK) window.speechSynthesis?.cancel();
+    toast(SPEAK_BACK ? "Spoken replies on." : "Spoken replies muted.");
+  };
+
+  $("#set-listen").onclick = (e) => {
+    const on = localStorage.getItem("jarvis.listen") !== "on";
+    localStorage.setItem("jarvis.listen", on ? "on" : "off");
+    e.currentTarget.classList.toggle("on", on);
+    if (on) startWakeLoop(); else { stopWakeLoop(); toast("Always-listen off."); }
+  };
+
+  const bootBtn = $("#set-boot");
+  if (bootBtn) bootBtn.onclick = async (e) => {
+    const on = !e.currentTarget.classList.contains("on");
+    const r = await post("/api/autostart", { enabled: on });
+    if (r.ok) { e.currentTarget.classList.toggle("on", on); toast(on ? "Jarvis will start with Windows, tucked into the tray." : "Autostart off."); }
+    else toast(r.error || "Couldn't change autostart", "err");
+  };
+
+  $("#set-net").onclick = async (e) => {
+    const on = !e.currentTarget.classList.contains("on");
+    const r = await post("/api/network", { enabled: on });
+    if (r.ok) {
+      e.currentTarget.classList.toggle("on", on);
+      toast(on ? "Phone control on — locked with a pairing key. Live after one relaunch." : "Phone control off (next launch).");
+      loadSettings();  // re-render so the QR row appears/disappears
+    } else toast(r.error || "Couldn't change network sharing", "err");
+  };
+  const copyBtn = $("#net-copy");
+  if (copyBtn) copyBtn.onclick = async () => {
+    try { await navigator.clipboard.writeText(netState.url); toast("Link copied — open it on your phone."); }
+    catch { toast(netState.url); }
+  };
+
+  const groqGet = $("#groq-get");
+  if (groqGet) groqGet.onclick = () => window.open("https://console.groq.com/keys", "_blank");
+  const groqArm = $("#groq-arm");
+  if (groqArm) groqArm.onclick = async () => {
+    const key = $("#groq-key").value.trim();
+    const note = $("#groq-arm-note");
+    if (!key) { note.textContent = "Paste the key first."; return; }
+    groqArm.disabled = true; note.textContent = "Testing the key against Groq…";
+    const r = await post("/api/providers/test_key", { api_key: key });
+    groqArm.disabled = false;
+    if (r.ok) {
+      note.textContent = `✔ Armed in ${r.latency_ms}ms — cascade brain live. Shield remains ${"guarded"}.`;
+      toast(`Groq armed — Ollama stays king, cloud covers the sulks.`);
+      $("#groq-key").value = "";
+      loadStatus(); loadSettings();
+    } else {
+      note.textContent = `✘ ${r.error || "key refused"} (nothing saved)`;
+    }
+  };
+
+  root.querySelectorAll(".st-preset").forEach((b) => (b.onclick = async () => {
+    const [name, , updates] = presets[+b.dataset.preset];
+    const r = await post("/api/settings", { updates });
+    if (r.ok) {
+      toast(`${name.replace(/^[^ ]+ /, "")} wired up.` + (r.notes?.length ? " " + r.notes.join(" ") : ""));
+      loadStatus(); loadSettings();
+    } else toast(r.error || "Preset failed", "err");
+  }));
+
+  const save = async (key, value) => {
+    const f = flat[key];
+    const r = await post("/api/settings", { updates: { [key]: value } });
+    if (r.ok) {
+      toast(`${f?.label || key} saved.` + (r.notes?.length ? " " + r.notes.join(" ") : ""));
+      if (key.startsWith("OLLAMA")) loadStatus();
+    } else {
+      toast(`Couldn't save ${f?.label || key}: ${r.error || "unknown error"}`, "err");
+    }
+  };
+
+  root.querySelectorAll(".st-toggle[data-set]").forEach((el) => (el.onclick = () => {
+    el.classList.toggle("on");
+    save(el.dataset.set, el.classList.contains("on"));
+  }));
+  root.querySelectorAll("input[data-set]").forEach((el) => {
+    const key = el.dataset.set, f = flat[key];
+    const liveLabel = () => {
+      const lab = root.querySelector(`[data-lab="${key}"]`);
+      if (lab && f) lab.textContent = el.value + (f.unit || "");
+    };
+    if (el.type === "range") { el.oninput = liveLabel; el.onchange = () => save(key, el.value); }
+    else el.onchange = () => save(key, el.value);
+  });
+}
 
 /* ─────────────────────────── navigation ─────────────────────────── */
 const NAV = [
@@ -49,8 +420,11 @@ const NAV = [
   ["memory", "Memory", "memory"],
   ["conversations", "Conversations", "chat"],
   ["knowledge", "Knowledge Base", "book"],
+  ["watcher", "The Watcher", "eye"],
   ["tools", "Tools & Skills", "tools"],
   ["workflows", "Workflows", "flow"],
+  ["studio", "Interface Studio", "palette"],
+  ["settings", "Settings", "system"],
 ];
 
 function buildNav() {
@@ -61,12 +435,69 @@ function buildNav() {
   $$(".nav-item").forEach((b) => (b.onclick = () => go(b.dataset.view)));
 }
 
+/* ── notification center (the bell actually does something now) ── */
+let NOTIFS = [];
+try { NOTIFS = JSON.parse(localStorage.getItem("jarvis.notifs") || "[]"); } catch {}
+let NOTIF_UNREAD = NOTIFS.filter(n => !n.read).length;
+
+function fmtWhen(at) {
+  const d = at ? new Date(at) : new Date();
+  return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function pushNotif(text, at = "") {
+  NOTIFS.unshift({ text, at: at || new Date().toISOString(), read: false });
+  NOTIFS = NOTIFS.slice(0, 50);
+  localStorage.setItem("jarvis.notifs", JSON.stringify(NOTIFS));
+  NOTIF_UNREAD++;
+  paintNotifBadge();
+}
+function paintNotifBadge() {
+  const b = $("#feed-badge");
+  b.textContent = NOTIF_UNREAD;
+  b.hidden = NOTIF_UNREAD === 0;
+}
+function renderNotifPanel() {
+  const el = $("#notif-panel");
+  if (!el) return;
+  el.innerHTML =
+    '<div class="np-head"><strong>Notifications</strong>' +
+    '<button class="np-clear" id="np-clear">Mark all read</button></div>' +
+    (NOTIFS.length
+      ? NOTIFS.map((n) =>
+          `<div class="np-item${n.read ? "" : " unread"}"><span class="np-when">${fmtWhen(n.at)}</span>${esc(n.text)}</div>`
+        ).join("")
+      : '<div class="np-item">Nothing yet — routines, reminders and brain events land here.</div>');
+  const clear = $("#np-clear");
+  if (clear) clear.onclick = () => {
+    NOTIFS.forEach((n) => (n.read = true));
+    NOTIF_UNREAD = 0;
+    localStorage.setItem("jarvis.notifs", JSON.stringify(NOTIFS));
+    paintNotifBadge(); renderNotifPanel();
+  };
+}
+function toggleNotifPanel(force) {
+  let el = $("#notif-panel");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "notif-panel";
+    document.body.appendChild(el);
+    document.addEventListener("click", (e) => {
+      if (!el.contains(e.target) && e.target.closest("#btn-bell") === null)
+        el.classList.remove("open");
+    });
+  }
+  const show = force !== undefined ? force : !el.classList.contains("open");
+  el.classList.toggle("open", show);
+  if (show) renderNotifPanel();
+}
+
 function go(view) {
   $$(".nav-item").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
   $$(".view").forEach((v) => v.classList.toggle("active", v.dataset.view === view));
   const loader = { tasks: loadTasks, calendar: loadTasks, memory: loadMemory,
     conversations: loadConversations, tools: loadSkills, workflows: loadWorkflows,
-    agents: loadAgents, aicore: loadLLMs, knowledge: renderKB }[view];
+    agents: loadAgents, aicore: loadLLMs, knowledge: renderKB, studio: buildStudio,
+    watcher: loadWatch, settings: loadSettings }[view];
   if (loader) loader();
   if (view === "aicore") setTimeout(() => $("#input").focus(), 60);
 }
@@ -105,20 +536,24 @@ function initGlobe() {
   size();
 
   function draw() {
-    t += 0.0032;
+    const T = THEME.rgb.acc || [60, 224, 255];
+    const GL = (v => (Number.isFinite(v) ? v : 1))(+THEME.values.glow);
+    const LITE = THEME.rgb.lite || [160, 240, 255];
+    const faint = GL || 0.35;               // keep structure readable at 0 glow
+    t += THEME.values.motion ? 0.0032 : 0;
     ctx.clearRect(0, 0, W, H);
     const cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.36;
     if (R <= 0) return requestAnimationFrame(draw);
 
     // halo
     const g = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.7);
-    g.addColorStop(0, "rgba(60,224,255,.13)");
-    g.addColorStop(0.55, "rgba(30,140,190,.05)");
+    g.addColorStop(0, trgba(T, 0.13 * faint));
+    g.addColorStop(0.55, trgba(THEME.rgb.deep || [30, 140, 190], 0.05 * faint));
     g.addColorStop(1, "transparent");
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
     // equator + orbit rings
-    ctx.strokeStyle = "rgba(60,224,255,.22)"; ctx.lineWidth = 1;
+    ctx.strokeStyle = trgba(T, 0.22 * faint); ctx.lineWidth = 1;
     for (const [rx, ry, rot] of [[1.35, .42, t * .5], [1.18, .3, -t * .35], [1.5, .2, t * .22]]) {
       ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
       ctx.beginPath(); ctx.ellipse(0, 0, R * rx, R * ry, 0, 0, Math.PI * 2); ctx.stroke();
@@ -147,7 +582,7 @@ function initGlobe() {
         if (b[2] < -0.15) continue;
         const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
         if (d < R * 0.24) {
-          ctx.strokeStyle = `rgba(60,224,255,${0.1 * (1 - d / (R * 0.24)) * (a[2] + 1)})`;
+          ctx.strokeStyle = trgba(T, 0.1 * (1 - d / (R * 0.24)) * (a[2] + 1));
           ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
         }
       }
@@ -155,7 +590,7 @@ function initGlobe() {
     // nodes
     for (const [x, y, z] of proj) {
       const depth = (z + 1) / 2;
-      ctx.fillStyle = `rgba(${120 + 90 * depth},${230},${255},${0.18 + depth * 0.62})`;
+      ctx.fillStyle = trgba(LITE, 0.18 + depth * 0.62);
       ctx.beginPath(); ctx.arc(x, y, 0.7 + depth * 1.3, 0, 6.283); ctx.fill();
     }
     // travelling arcs
@@ -166,9 +601,9 @@ function initGlobe() {
       if (A[2] < 0 && B[2] < 0) continue;
       const x = A[0] + (B[0] - A[0]) * arc.p;
       const y = A[1] + (B[1] - A[1]) * arc.p - Math.sin(arc.p * Math.PI) * R * 0.22;
-      ctx.fillStyle = "rgba(160,240,255,.95)";
+      ctx.fillStyle = trgba(LITE, 0.95);
       ctx.beginPath(); ctx.arc(x, y, 1.9, 0, 6.283); ctx.fill();
-      ctx.shadowBlur = 10; ctx.shadowColor = "#3ce0ff";
+      ctx.shadowBlur = 10 * (GL || 0.35); ctx.shadowColor = THEME.values.accent;
       ctx.fill(); ctx.shadowBlur = 0;
     }
     requestAnimationFrame(draw);
@@ -179,7 +614,7 @@ function initGlobe() {
 /* ─────────────────────────── waveforms ─────────────────────────── */
 function waveform(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
-  const bars = opts.bars || 34, color = opts.color || "#3ce0ff";
+  const bars = opts.bars || 34;
   let t = 0, amp = 0.12, dpr = Math.min(devicePixelRatio || 1, 2);
   function size() {
     canvas.width = canvas.clientWidth * dpr;
@@ -190,8 +625,10 @@ function waveform(canvas, opts = {}) {
   size();
   function frame() {
     const W = canvas.clientWidth, H = canvas.clientHeight;
+    const colIdle = opts.color || THEME.values.accent || "#3ce0ff";
+    const colLive = trgba(THEME.rgb.liteHot || [255, 143, 164], 0.95);
     ctx.clearRect(0, 0, W, H);
-    t += 0.09;
+    if (THEME.values.motion) t += 0.09;
     const target = LISTENING ? 0.92 : opts.idle ?? 0.16;
     amp += (target - amp) * 0.09;
     const bw = W / bars;
@@ -200,7 +637,7 @@ function waveform(canvas, opts = {}) {
       const h = Math.max(1.5,
         (Math.sin(t + i * 0.55) * 0.5 + Math.sin(t * 1.7 + i * 0.31) * 0.5 + 1) / 2 * H * amp * env);
       const x = i * bw + bw * 0.22, w = Math.max(1.2, bw * 0.5);
-      ctx.fillStyle = LISTENING ? "#ff8fa4" : color;
+      ctx.fillStyle = LISTENING ? colLive : colIdle;
       ctx.globalAlpha = 0.35 + env * 0.6;
       ctx.fillRect(x, (H - h) / 2, w, h);
     }
@@ -219,8 +656,112 @@ function tickClock() {
 }
 
 /* ─────────────────────────── data loaders ─────────────────────────── */
+/* ─────────────────────────── the watcher ─────────────────────────── */
+// The watcher used to rebuild five panels and all screenshot <img> tags every
+// six seconds. In WebView2 that made the tab feel frozen, especially when the
+// timeline contained several large PNGs. Keep one request in flight and only
+// touch a panel when its data actually changed.
+let WATCH_BUSY = false;
+let WATCH_AGAIN = false;
+let WATCH_SIG = { toggles: "", focus: "", clipboard: "", activity: "", shots: "" };
+
+function watchChanged(key, value) {
+  const sig = JSON.stringify(value ?? null);
+  const changed = WATCH_SIG[key] !== sig;
+  WATCH_SIG[key] = sig;
+  return changed;
+}
+
+async function loadWatch() {
+  if (WATCH_BUSY) { WATCH_AGAIN = true; return; }
+  WATCH_BUSY = true;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  try {
+    const d = await api("/api/watch", controller ? { signal: controller.signal } : undefined);
+    const sub = d.observer
+      ? `watching — sampling every ${d.poll}s${d.shots_on ? `, a frame every ${d.shot_interval}s` : ""}`
+      : "OFF — flip a switch and I'll start remembering what happens here.";
+    $("#watch-sub").textContent = sub;
+
+    const toggleState = [d.observer, d.shots_on, d.typed_on, d.autolock,
+      d.clipboard_on, d.shot_interval, d.autolock_minutes];
+    if (watchChanged("toggles", toggleState)) {
+      const tgl = (label, on, key, hint) =>
+        `<label class="st-ctl"><span>${label}<br><small class="st-note">${hint}</small></span>
+         <button type="button" class="st-toggle ${on ? "on" : ""}" data-watch="${key}"></button></label>`;
+      $("#watch-toggles").innerHTML =
+        tgl("👁 Observer", d.observer, "observer", "remembers which apps you use, learns your hours") +
+        tgl("📸 Screenshot timeline", d.shots_on, "shots", `one frame / ${d.shot_interval}s, pruned on rollover + exit`) +
+        tgl("⌨️ Typing memory", d.typed_on, "typed", "remembers text you type (auto-pauses on sign-in screens)") +
+        tgl("🔒 Auto-lock walk-away", d.autolock, "autolock", `locks Windows after ${d.autolock_minutes} idle minutes (30s warning first)`) +
+        tgl("📋 Clipboard memory", d.clipboard_on, "clipboard", "copies become searchable — secrets never stored");
+
+      document.querySelectorAll("[data-watch]").forEach((b) => (b.onclick = async () => {
+        if (b.disabled) return;
+        b.disabled = true;
+        const next = !b.classList.contains("on");
+        try {
+          const r = await post("/api/watch", { [b.dataset.watch]: next });
+          if (r.ok) { paintNotifBadge(); toast(next ? "Eyes open." : "Eyes closed."); }
+        } finally {
+          b.disabled = false;
+          loadWatch();
+        }
+      }));
+    }
+
+    if (watchChanged("focus", d.focused || {})) {
+      $("#watch-focus").innerHTML = d.observer && d.focused?.app
+        ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
+           <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`
+        : `<div class="st-note">Nothing — the observer is off${d.observer ? " (or the desktop can't be read here)" : ""}.</div>`;
+    }
+    if (watchChanged("clipboard", d.clipboard_recent || [])) {
+      $("#watch-clipboard").innerHTML = (d.clipboard_recent || []).slice().reverse().map((c) =>
+        `<div class="li"><span>${esc((c.text || "").replace(/\n/g, " ").slice(0, 52))}${(c.text || "").length > 52 ? "…" : ""}</span>
+         <span class="st-note">${esc(c.app || "")} · ${fmtWhen(c.at)}</span></div>`
+      ).join("") || `<span class="st-note">${d.clipboard_on ? "Nothing copied yet — it lands here." : "Off — flip the 📋 switch above."}</span>`;
+    }
+    if (watchChanged("activity", d.activity || [])) {
+      $("#watch-activity").innerHTML = (d.activity || []).slice().reverse().map((a) =>
+        `<div class="li"><span>${esc(a.app || "?")}</span>
+         <span class="st-note">${esc((a.title || "").slice(0, 60))} · ${fmtWhen(a.at)}</span></div>`
+      ).join("") || '<div class="li"><span class="st-note">No sightings yet.</span></div>';
+    }
+
+    $("#watch-shot-count").textContent = d.shots_on ? `(${d.shots_total} on disk, last 8 shown)` : "(off)";
+    const shotSig = (d.shots || []).map((sh) => `${sh.name}:${sh.at}`).join("|");
+    if (watchChanged("shots", shotSig)) {
+      $("#watch-shots").innerHTML = (d.shots || []).slice().reverse().map((sh) =>
+        `<figure class="shot"><img loading="lazy" decoding="async" src="/api/watch/shot?name=${encodeURIComponent(sh.name)}" alt="${esc(sh.name)}">
+         <figcaption>${new Date(sh.at * 1000).toLocaleTimeString()}</figcaption></figure>`
+      ).join("") || `<span class="st-note">${d.shots_on ? "No frames captured yet — give it a minute." : "Turn on the timeline to start capturing."}</span>`;
+    }
+  } catch (e) {
+    const sub = $("#watch-sub");
+    if (sub) sub.textContent = "Watcher link delayed — retrying…";
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    WATCH_BUSY = false;
+    if (WATCH_AGAIN) {
+      WATCH_AGAIN = false;
+      setTimeout(loadWatch, 0);
+    }
+  }
+}
+setInterval(() => {  // light, deduplicated refresh while you're on the view
+  if ($$(".view.active")[0]?.dataset.view === "watcher") loadWatch();
+}, 10000);
+
 async function loadStatus() {
-  STATUS = await api("/api/status");
+  try {
+    STATUS = await api("/api/status");
+  (STATUS.alerts || []).forEach((a) => {
+    toast(`🔔 ${a.text}`, "good");
+    if (SPEAK_BACK) say(a.text);
+    pushNotif(a.text, a.at || "");
+  });
   $("#core-version").textContent = "v" + STATUS.version;
   $("#op-role").textContent = STATUS.user_title || "Commander";
   const bad = STATUS.provider === "offline";
@@ -252,8 +793,13 @@ async function loadStatus() {
   $("#tool-count").textContent = `${STATUS.skills} registered`;
   $("#mem-turns").textContent = STATUS.stats?.session_turns ?? 0;
   $("#mem-tools").textContent = STATUS.stats?.tool_calls ?? 0;
+  } catch (e) {
+    // backend (or your own hiccup): the dashboard must NEVER freeze in BOOTING
+    const pill = document.querySelector("#sys-pill");
+    if (pill) { pill.textContent = "LINK DOWN — retrying"; pill.style.color = "#f0b35c"; }
+    try { post("/api/uierror", { text: "loadStatus: " + (e && e.message || e) }); } catch (_2) {}
+  }
 }
-
 async function loadSystem() {
   const d = await api("/api/system");
   for (const key of ["cpu", "memory", "disk"]) {
@@ -375,14 +921,14 @@ function drawMemGraph(n) {
     const r = (0.18 + ((i * 37) % 100) / 100 * 0.32) * Math.min(W, H);
     nodes.push([W / 2 + Math.cos(a) * r * 1.5, H / 2 + Math.sin(a) * r]);
   }
-  ctx.strokeStyle = "rgba(60,224,255,.22)"; ctx.lineWidth = 0.7;
+  ctx.strokeStyle = trgba(THEME.rgb.acc || [60, 224, 255], 0.22); ctx.lineWidth = 0.7;
   nodes.forEach((a, i) => nodes.slice(i + 1).forEach((b) => {
     if (Math.hypot(a[0] - b[0], a[1] - b[1]) < Math.min(W, H) * 0.34) {
       ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
     }
   }));
   nodes.forEach(([x, y], i) => {
-    ctx.fillStyle = i % 4 === 0 ? "#a06bff" : "#3ce0ff";
+    ctx.fillStyle = i % 4 === 0 ? THEME.values.violet || "#a06bff" : THEME.values.accent || "#3ce0ff";
     ctx.shadowBlur = 8; ctx.shadowColor = ctx.fillStyle;
     ctx.beginPath(); ctx.arc(x, y, i % 4 === 0 ? 3 : 2, 0, 6.283); ctx.fill();
   });
@@ -421,8 +967,34 @@ function renderSkills(filter) {
   }));
 }
 
+async function loadRoutines() {
+  const { routines } = await api("/api/routines");
+  const grid = $("#rt-grid");
+  grid.innerHTML = routines.length ? routines.map((r) =>
+    `<div class="wf"><h3>🕐 ${esc(r.name)}</h3>
+       <p>${esc(r.schedule_human)} · ${r.enabled ? "on" : "done"} · last: ${esc(r.last_run || "never")}</p>
+       <p class="dim" style="font-size:11px">${esc(r.prompt.slice(0, 120))}</p>
+       <div style="display:flex;gap:8px">
+         <button class="wf-run" data-rt-run="${r.id}">▶ Run now</button>
+         <button class="wf-run st-danger" data-rt-del="${r.id}">✕</button>
+       </div>${r.runs?.length ? `<p class="dim" style="font-size:10.5px;margin-top:6px">last run: ${esc((r.runs[r.runs.length-1].summary || "").slice(0, 140))}</p>` : ""}</div>`
+  ).join("") : `<p class="dim">No routines yet — try “every morning brief me on my tasks” in chat, or + new routine.</p>`;
+  $$("[data-rt-run]").forEach((b) => (b.onclick = async () => {
+    b.textContent = "Running…";
+    const r = await post(`/api/routines/${b.dataset.rtRun}/run`);
+    toast(r.note || r.error, r.ok ? "good" : "err");
+    setTimeout(loadRoutines, 1200);
+  }));
+  $$("[data-rt-del]").forEach((b) => (b.onclick = async () => {
+    b.textContent = "…";
+    await fetch(`/api/routines/${b.dataset.rtDel}`, { method: "DELETE" });
+    toast("Routine removed."); loadRoutines();
+  }));
+}
+
 async function loadWorkflows() {
   const { workflows } = await api("/api/workflows");
+  loadRoutines();
   setCount("workflows", workflows.length);
   $("#wf-grid").innerHTML = workflows.map((w) =>
     `<div class="wf"><h3>${esc(w.name)}</h3><p>${esc(w.description)}</p>
@@ -444,6 +1016,8 @@ async function loadQuick() {
     ["Take Screenshot", "camera", () => sendMessage("take a screenshot", true)],
     ["Open Calendar", "calendar", () => go("calendar")],
     ["System Report", "cpu", () => sendMessage("system status", true)],
+    ["Security Scan", "alert", () => sendMessage("security report", true)],
+    ["Speed Up My PC", "power", () => sendMessage("speed up my pc", true)],
     ["Start Voice Chat", "voice", () => toggleMic()],
     ["Run Workflow", "flow", () => go("workflows")],
     ["Lock Computer", "power", () => sendMessage("lock the computer", true)],
@@ -479,7 +1053,13 @@ function renderKB() {
     ["Workflows", `<p>Chain skills into one command. Run them from the <b>Workflows</b> panel or say “run workflow Focus Mode”. Add your own in <code>jarvis/state.py</code>.</p>`],
     ["Files & research", `<ul><li>“what's in my downloads folder”</li><li>“find files named invoice”</li>
       <li>“clean my downloads”</li><li>“what's the weather”, “what's the news”</li>
-      <li>“who is Ada Lovelace”</li></ul>`],
+      <li>“who is Ada Lovelace”, “read the page https://…”</li></ul>`],
+    ["Security & tune-up", `<ul><li>“security report” — antivirus + processes + startup</li>
+      <li>“scan for viruses”, “run an antivirus scan” (Windows Defender)</li>
+      <li>“startup audit”, “disable startup item Spotify”</li>
+      <li>“find suspicious processes”</li>
+      <li>“speed up my pc”, “clean my memory”, “clean temp files”</li></ul>
+      <p>Everything flagged is read-only until you approve the change.</p>`],
   ];
   $("#kb").innerHTML = cards.map(([t, b]) => `<div class="kb-card"><h3>${t}</h3>${b}</div>`).join("");
 }
@@ -495,12 +1075,20 @@ function fmtDue(iso) {
   } catch { return iso; }
 }
 
-function bubble(role, text, actions = [], isErr = false) {
+function bubble(role, text, actions = [], isErr = false, meta = {}) {
   const el = document.createElement("div");
-  el.className = `msg ${role}${isErr ? " err" : ""}`;
-  el.innerHTML = `<span class="who">${role === "user" ? "operator" : "jarvis"}</span>` +
+  const prov = (meta.provider || "").toLowerCase();
+  const isOffline = prov.includes("offline");   // backup brain: styles + label loudly
+  el.className = `msg ${role}${isErr ? " err" : ""}${isOffline ? " offline" : ""}`;
+  // The WHO label says which brain answered — no more squinting for a tiny chip.
+  const who = role === "user" ? "operator"
+    : isOffline ? "jarvis · offline engine"
+    : prov ? `jarvis · ${prov.toUpperCase()}` : "jarvis";
+  const chip = (role === "user" || !meta.provider) ? "" :
+    `<div class="prov-chip${isOffline ? " warn" : ""}">via ${esc(meta.provider)}</div>`;
+  el.innerHTML = `<span class="who">${who}</span>` +
     `<div>${esc(text)}</div>` +
-    actions.map((a) => `<div class="act">⚙ ${esc(a.skill)}${Object.keys(a.arguments || {}).length ? " " + esc(JSON.stringify(a.arguments)) : ""}</div>`).join("");
+    actions.map((a) => `<div class="act">⚙ ${esc(a.skill)}${Object.keys(a.arguments || {}).length ? " " + esc(JSON.stringify(a.arguments)) : ""}</div>`).join("") + chip;
   $("#log").appendChild(el);
   $("#log").scrollTop = $("#log").scrollHeight;
   return el;
@@ -518,17 +1106,80 @@ async function sendMessage(text, switchView = false) {
   $("#log").scrollTop = $("#log").scrollHeight;
   $("#sys-state").textContent = "PROCESSING";
   try {
-    const d = await post("/api/chat", { message: text });
+    // Fast path: stream the answer token-by-token.
+    const res = await streamChat(text, ghost);
     ghost.remove();
-    bubble("bot", d.reply || "(no reply)", d.actions || [], !!d.error);
-    say(d.reply);
+    bubble("bot", res.reply || "(no reply)", res.actions || [], !!res.error, { provider: res.provider });
+    say(res.reply);
     refreshDash();
   } catch (e) {
-    ghost.remove();
-    bubble("bot", `Backend unreachable: ${e}`, [], true);
+    // Nothing ever streamed (old backend) — safe to retry once on the
+    // classic endpoint, since no work can have happened server-side yet.
+    try {
+      const d = await post("/api/chat", { message: text });
+      ghost.remove();
+      bubble("bot", d.reply || "(no reply)", d.actions || [], !!d.error, { provider: d.provider });
+      say(d.reply);
+      refreshDash();
+    } catch (e2) {
+      ghost.remove();
+      bubble("bot", `Backend unreachable: ${e2}`, [], true);
+    }
   } finally {
     $("#sys-state").textContent = STATUS.provider === "offline" ? "LIMITED" : "OPTIMAL";
   }
+}
+
+async function streamChat(text, ghost) {
+  const resp = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: text }),
+  });
+  if (!resp.ok || !resp.body) throw new Error(`stream unavailable (${resp.status})`);
+
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", reply = "", actions = [], final = null, sawEvent = false;
+
+  const paint = () => {
+    ghost.innerHTML = `<span class="who">jarvis</span><div>${esc(reply)}</div>`;
+    $("#log").scrollTop = $("#log").scrollHeight;
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      const line = raw.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      sawEvent = true;
+      if (ev.type === "token") { reply += ev.text; paint(); }
+      else if (ev.type === "action") { actions.push(ev); }
+      else if (ev.type === "done") { final = ev; }
+      else if (ev.type === "error") {
+        // A crash after partial work — do NOT retry elsewhere (would double-run).
+        final = { reply: reply || `Something glitched mid-thought. (${ev.error})`, actions, error: ev.error };
+      }
+    }
+  }
+  if (final) {
+    return {
+      reply: final.reply || reply,
+      actions: (final.actions && final.actions.length ? final.actions : actions),
+      error: final.error || null,
+    };
+  }
+  if (sawEvent || reply) {
+    // Connection died mid-stream: keep what we have, never re-queue the work.
+    return { reply: reply || "My connection to the backend dropped mid-reply.", actions, error: "stream ended early" };
+  }
+  throw new Error("no stream events"); // → caller falls back to /api/chat
 }
 
 /* ─────────────────────────── voice ─────────────────────────── */
@@ -540,6 +1191,7 @@ function say(text) {
     || vs.find((v) => /en-GB/i.test(v.lang)) || vs.find((v) => /en/i.test(v.lang));
   if (pick) u.voice = pick;
   u.rate = 1.03; u.pitch = 0.92;
+  if (WAKE_WANT && !LISTENING && !WAKE_LOOP) startWakeLoop();  // barge-in: ears stay on while I speak
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
 
@@ -552,8 +1204,12 @@ function initVoice() {
   }
   RECOGNIZER = new SR();
   RECOGNIZER.lang = "en-US"; RECOGNIZER.interimResults = true; RECOGNIZER.continuous = false;
-  RECOGNIZER.onstart = () => { LISTENING = true; setVoiceUI(true); };
-  RECOGNIZER.onend = () => { LISTENING = false; setVoiceUI(false); };
+  RECOGNIZER.onstart = () => { LISTENING = true; setVoiceUI(true); if (WAKE_LOOP) stopWakeLoopSoft(); };
+  RECOGNIZER.onend = () => {
+    LISTENING = false; setVoiceUI(false);
+    // hand the mic back to the always-listen loop when a command finishes
+    if (WAKE_WANT) setTimeout(() => { if (!LISTENING) { WAKE_LOOP = null; startWakeLoop(); } }, 700);
+  };
   RECOGNIZER.onerror = (e) => { LISTENING = false; setVoiceUI(false); if (e.error === "not-allowed") toast("Microphone access was blocked.", "warn"); };
   RECOGNIZER.onresult = (e) => {
     const res = e.results[e.results.length - 1];
@@ -562,6 +1218,84 @@ function initVoice() {
     if (res.isFinal) sendMessage(text.replace(new RegExp(`^\\s*${STATUS.wake_word || "jarvis"}[,\\s]*`, "i"), ""), true);
   };
 }
+
+/* ───── always-listening wake loop + global summon hook ───── */
+let WAKE_LOOP = null, WAKE_WANT = false;
+
+let _wakeFailCount = 0;
+function safeStartWakeLoop() {
+  // WebView2 (the desktop window) has flaked out voice before; if the
+  // recognizer won't stay alive after 3 honest tries, disarm rather than hang.
+  if (_wakeFailCount >= 3) {
+    localStorage.setItem("jarvis.listen", "off");
+    toast("Always-listen keeps failing here, so I disarmed it — the mic button still works.", "warn");
+    fetch("/api/uierror", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: "wake loop gave up after 3 failed starts"})}).catch(() => {});
+    return;
+  }
+  try { startWakeLoop(); } catch (e) { _wakeFailCount++; reportUiError("startWakeLoop threw: " + e); }
+}
+
+function reportUiError(text) {
+  try {
+    fetch("/api/uierror", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: String(text).slice(0, 500)})}).catch(() => {});
+  } catch {}
+}
+window.addEventListener("error", (e) => reportUiError("JS: " + (e.message || e.type)));
+window.addEventListener("unhandledrejection", (e) => reportUiError("Promise: " + (e.reason?.message || e.reason || "unknown")));
+
+function startWakeLoop() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return toast("Always-listen needs Edge or Chrome for speech recognition.", "warn");
+  if (WAKE_LOOP || LISTENING) return;
+  WAKE_WANT = true;
+  WAKE_LOOP = new SR();
+  WAKE_LOOP.lang = "en-US"; WAKE_LOOP.continuous = true; WAKE_LOOP.interimResults = true;
+  const wake = (STATUS.wake_word || "jarvis").toLowerCase();
+  WAKE_LOOP.onresult = (e) => {
+    const tail = Array.from(e.results).slice(-2).map((r) => r[0].transcript).join(" ").toLowerCase();
+    if (tail.includes(wake)) {
+      WAKE_LOOP._hot = true;
+      speechSynthesis?.cancel();   // barging in: silence the reply instantly
+      try { WAKE_LOOP.stop(); } catch {}
+    }
+  };
+  WAKE_LOOP.onend = () => {
+    const hot = WAKE_LOOP && WAKE_LOOP._hot;
+    WAKE_LOOP = null;
+    if (hot) { toast(`Heard you — listening…`); toggleMic(); }
+    else if (WAKE_WANT && !LISTENING) setTimeout(() => { if (WAKE_WANT && !LISTENING) startWakeLoop(); }, 2200);
+  };
+  WAKE_LOOP.onerror = (e) => {
+    if (e.error === "not-allowed") {
+      stopWakeLoop();
+      localStorage.setItem("jarvis.listen", "off");
+      toast("Microphone blocked — always-listen switched off.", "warn");
+    }
+  };
+  try { WAKE_LOOP.start(); } catch {}
+  toast(`Always-listen: say “${wake}” anytime.`, "good");
+}
+
+function stopWakeLoop() {
+  WAKE_WANT = false;
+  try { WAKE_LOOP?.abort(); } catch {}
+  WAKE_LOOP = null;
+}
+
+// Pause the wake loop without disabling the preference (mic handoff).
+function stopWakeLoopSoft() {
+  try { WAKE_LOOP?.abort(); } catch {}
+}
+
+// Summoned from the Windows Ctrl+J global hotkey (desktop.py).
+window.jarvisWake = () => {
+  try { go("command"); } catch {}
+  document.querySelector("#search")?.focus();
+  if (!LISTENING && RECOGNIZER) setTimeout(() => toggleMic(), 150);
+  toast("At your service.");
+};
 
 function setVoiceUI(on) {
   $("#mic-orb").classList.toggle("rec", on);
@@ -591,7 +1325,11 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
 
 /* ─────────────────────────── boot ─────────────────────────── */
 (async function boot() {
+  initTheme();   // before any canvas work so drawings pick up themed colours
+  SPEAK_BACK = localStorage.getItem("jarvis.speak") !== "off";
   buildNav();
+  buildStudio();
+  loadSettings();
   initGlobe();
   waveform($("#voice-wave"), { bars: 30, idle: 0.22 });
   waveform($("#talk-wave-l"), { bars: 16, idle: 0.3 });
@@ -606,11 +1344,37 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
   $("#mic-sm").onclick = toggleMic;
   $("#talk-bar").onclick = toggleMic;
   $("#btn-grid").onclick = () => go("command");
-  $("#btn-bell").onclick = () => { go("command"); loadFeed(); };
-  $("#btn-settings").onclick = () => go("aicore");
+  $("#btn-bell").onclick = (e) => { e.stopPropagation(); toggleNotifPanel(); };
+  paintNotifBadge();
+  $("#btn-settings").onclick = () => go("settings");
+  $("#settings-studio").onclick = () => go("studio");
   $("#brief-btn").onclick = () => sendMessage("executive briefing", true);
   $("#btn-reset").onclick = async () => { await post("/api/reset"); $("#log").innerHTML = ""; bubble("bot", "Context cleared."); };
   $("#btn-clear-convos").onclick = async () => { await fetch("/api/conversations", { method: "DELETE" }); loadConversations(); };
+  $("#rt-add").onclick = async () => {
+    const schedule = prompt("When should it run? (e.g. 'every morning', 'every day at 5pm', 'every 2 hours', 'monday 9am')", "every morning");
+    if (!schedule) return;
+    const promptText = prompt("What should Jarvis do each run? (plain words)", "Brief me on my tasks and the weather");
+    if (!promptText) return;
+    const name = prompt("Name this routine:", "Morning briefing") || "Routine";
+    const r = await post("/api/routines", { name, schedule_text: schedule, prompt: promptText });
+    toast(r.note || r.error, r.ok ? "good" : "err");
+    if (r.ok) loadRoutines();
+  };
+  $("#theme-reset").onclick = () => { THEME.values = { ...THEME_DEFAULTS }; applyTheme(); buildStudio(); toast("Theme reset to the Jarvis default."); };
+  $("#theme-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(JSON.stringify(THEME.values, null, 2)); toast("Theme copied to the clipboard."); }
+    catch { toast("Clipboard was blocked by the system.", "warn"); }
+  };
+  $("#theme-paste").onclick = () => {
+    const raw = window.prompt("Paste a theme JSON blob from 'Copy theme':");
+    if (!raw) return;
+    try {
+      const obj = JSON.parse(raw);
+      THEME.values = { ...THEME_DEFAULTS, ...obj };
+      applyTheme(); buildStudio(); toast("Theme imported.");
+    } catch { toast("That doesn't look like a theme blob.", "err"); }
+  };
   $("#skill-filter").oninput = (e) => renderSkills(e.target.value);
   $$("[data-goto]").forEach((b) => (b.onclick = () => go(b.dataset.goto)));
 
@@ -639,8 +1403,16 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
     $("#mem-text").value = ""; loadMemory();
   };
   $("#provider").onchange = async (e) => {
-    const s = await post(`/api/provider/${e.target.value}`);
-    toast(`Brain switched to ${s.provider} (${s.model}).` + (s.notes?.length ? "\n" + s.notes.join("\n") : ""));
+    const wanted = e.target.value;
+    const s = await post(`/api/provider/${wanted}`);
+    const fellBack = wanted !== "auto" && s.provider !== wanted;
+    toast(
+      (fellBack
+        ? `Couldn't use ${wanted} — fell back to ${s.provider} (${s.model}).`
+        : `Brain switched to ${s.provider} (${s.model}).`) +
+        (s.notes?.length ? "\n" + s.notes.join("\n") : ""),
+      fellBack || s.notes?.length ? "warn" : "",
+    );
     loadStatus(); loadLLMs(); loadAgents();
   };
   $("#search").oninput = (e) => {
@@ -672,4 +1444,17 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
     ? `Command center online, ${t}. I'm running the offline engine — direct commands only, no API key needed. Open the Knowledge Base for how to add a real model.`
     : `Command center online, ${t}. All systems nominal. What do you need?`);
   speechSynthesis?.getVoices();
+
+  // Morning briefing: first launch of the day gets the situational rundown.
+  try {
+    const brief = await api("/api/briefing");
+    if (brief?.pending) setTimeout(() => { bubble("bot", brief.text); if (SPEAK_BACK) say(brief.spoken); }, 900);
+  } catch {}
+
+  // Always-listening wake word, if the user armed it — but LATE: letting the
+  // page settle first avoids the WebView2 voice-start freeze (mic/perms race
+  // right after load was the post-boot "Not Responding").
+  if (localStorage.getItem("jarvis.listen") === "on") setTimeout(safeStartWakeLoop, 4000);
+
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 })();

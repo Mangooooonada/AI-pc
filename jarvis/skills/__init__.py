@@ -71,6 +71,55 @@ def tool_schemas() -> List[Dict[str, Any]]:
     return [s.schema() for s in REGISTRY.values()]
 
 
+# Always offered, whatever the user says — memory, identity and the two
+# escape hatches are cheap and frequently useful mid-conversation.
+_PACK_ALWAYS = {"remember", "recall", "who_am_i", "web_search", "list_capabilities"}
+
+
+def pack_tools(user_text: str, limit: int = 0) -> tuple[List[Dict[str, Any]], int]:
+    """Pick the most relevant tool schemas for this message.
+
+    50+ schemas swamp a 7B local model: they eat context AND make malformed
+    tool-call output (the Ollama "closing '}'" 400) measurably more likely.
+    Packing the ~16 most relevant ones per message keeps small models sharp.
+    """
+    from ..config import config  # local import: avoid module cycles
+
+    tools = tool_schemas()
+    limit = max(6, limit or getattr(config, "tool_pack", 16))
+    if len(tools) <= limit:
+        return tools, 0
+
+    text = normalize(user_text or "")
+    words = {w for w in re.split(r"\W+", text) if len(w) > 2}
+    scored: List[tuple[float, str]] = []
+    for sk in REGISTRY.values():
+        best = 55.0 if sk.name in _PACK_ALWAYS else 0.0
+        name_words = set(sk.name.split("_"))
+        for trigger in sk.triggers:
+            trig = normalize(trigger)
+            parts = re.split(r"\{(\w+)\}", trig)
+            pattern, literal = "", 0
+            for i, part in enumerate(parts):
+                if i % 2:
+                    pattern += r".+?"
+                else:
+                    pattern += re.escape(part)
+                    literal += len(part.strip())
+            if re.search(pattern + r"\s*$", text) or re.fullmatch(pattern, text):
+                best = max(best, 10_000.0 + literal)
+                continue
+            trig_words = {w for w in re.split(r"\W+", trig) if len(w) > 2}
+            overlap = len((trig_words | name_words) & words)
+            best = max(best, overlap * 100.0 + literal)
+        scored.append((-best, sk.name))
+
+    scored.sort()
+    keep = {name for _, name in scored[:limit]}
+    packed = [t for t in tools if t["function"]["name"] in keep]
+    return packed, len(tools) - len(packed)
+
+
 def run_skill(name: str, arguments: Dict[str, Any]) -> str:
     sk = REGISTRY.get(name)
     if sk is None:
@@ -103,6 +152,10 @@ def looks_like_math(text: str) -> bool:
     return bool(re.search(r"[\d\s]+[-+*/^x%]|\bpercent\b|% of |\bplus\b|\bminus\b|\btimes\b|\bdivided by\b", t))
 
 
+_FILLER_TAIL = {"today", "please", "now", "tonight", "again", "right", "this",
+                "morning", "evening", "afternoon", "for", "me", "sir", "jarvis"}
+
+
 def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
     """Very small intent matcher used when no LLM is available.
 
@@ -126,18 +179,35 @@ def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
                     pattern += re.escape(part)
                     literal += len(part.strip())
             m = re.search(pattern + r"\s*$", low) or re.fullmatch(pattern, low)
+            args: Dict[str, Any] = {}
+            start = m.start() if m else 0
+            if not m and "{" not in trig:
+                # Paramless trigger with a harmless trailing filler?
+                # "what is the news today" should still hit the "news" skill.
+                norm = normalize(trigger)
+                if low.startswith(norm + " "):
+                    tail = low[len(norm):].strip().split()
+                    if len(tail) <= 3 and all(w in _FILLER_TAIL for w in tail):
+                        m = True  # synthetic: exact-literal match, no args
+                        start = 0
             if not m:
                 continue
-            args = {k: v.strip(" ?.!,") for k, v in (m.groupdict() or {}).items() if v}
+            if m is not True:
+                args = {k: v.strip(" ?.!,") for k, v in (m.groupdict() or {}).items() if v}
             # Rank by how much literal trigger text was matched, then by how
             # early in the sentence the trigger starts.
-            score = (literal, -m.start())
+            score = (literal, -start)
             if best is None or score > best[0]:
                 best = (score, sk.name, args)
     if best:
         # "what is 15% of 240" is arithmetic, not an encyclopedia lookup.
         if best[1] in {"wikipedia_summary", "web_search"} and looks_like_math(text):
             return "calculate", {"expression": best[2].get("topic") or best[2].get("query") or text}
+        # "what is the news/todays news/headlines…" is JOURNALISM, not an
+        # encyclopedia lookup — tie-loses used to hand it to Wikipedia.
+        if best[1] in {"wikipedia_summary", "web_search"} and re.search(
+                r"\b(news?|headlines?)\b", low):
+            return "get_news", {"topic": ""}
         return best[1], best[2]
     if looks_like_math(text):
         return "calculate", {"expression": text}
@@ -145,4 +215,4 @@ def match_offline(text: str) -> Optional[tuple[str, Dict[str, Any]]]:
 
 
 # Importing the modules below populates REGISTRY.
-from . import system, apps, media, files, web, knowledge, agenda  # noqa: E402,F401
+from . import system, apps, media, files, web, knowledge, agenda, security, vision, dev, docs, google, train, driver  # noqa: E402,F401

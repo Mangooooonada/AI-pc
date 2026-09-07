@@ -10,6 +10,7 @@
 Flags:
     --no-browser    with `web`, don't auto-open a browser tab
     --fullscreen    with the desktop app, start borderless full screen
+    --minimized     with the desktop app, start tucked away (used by Start-with-Windows)
     --dev           with the desktop app, enable the web inspector
     --speak         with `cli`, speak the replies aloud
 """
@@ -58,11 +59,54 @@ def main() -> int:
     if mode in {"app", "ui", "gui", "desktop", "hud"}:
         from jarvis.desktop import run
 
-        return run(fullscreen="--fullscreen" in args, dev="--dev" in args)
+        return run(
+            fullscreen="--fullscreen" in args, dev="--dev" in args,
+            start_minimized=("--minimized" in args or "--tray" in args),
+        )
 
     print(__doc__)
     return 1
 
 
+def _crash_report(exc: BaseException) -> None:
+    """Last-resort crash handler: always leave evidence behind.
+
+    The app launches via pythonw.exe (no console), so without this an early
+    crash was completely invisible, which read as 'Jarvis sometimes crashes
+    and nothing happens'.
+    """
+    import traceback
+    from pathlib import Path
+
+    log = Path(__file__).resolve().parent / "jarvis-launcher.log"
+    detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    try:
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(f"\n=== CRASH {__import__('datetime').datetime.now():%Y-%m-%d %H:%M:%S} ===\n{detail}")
+    except OSError:
+        pass
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f"Jarvis crashed while starting:\n\n{type(exc).__name__}: {exc}\n\n"
+                "Full details were written to jarvis-launcher.log.",
+                "JARVIS",
+                0x10,  # MB_ICONERROR
+            )
+        except Exception:
+            pass
+    else:
+        print(detail, file=sys.stderr)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - last resort crash reporting
+        _crash_report(exc)
+        raise SystemExit(2)

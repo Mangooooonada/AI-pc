@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from . import skill
 from .. import state
+from ..config import config
 
 
 def parse_when(text: str) -> Optional[str]:
@@ -180,7 +181,15 @@ def remember(text: str, kind: str = "fact") -> str:
         "type": "object",
         "properties": {"query": {"type": "string", "description": "What to search for"}},
     },
-    triggers=["what do you remember about {query}", "recall {query}", "what do you know about me"],
+    triggers=[
+        "what do you remember about {query}", "recall {query}",
+        "what do you know about me", "what do you know about {query}",
+        "what is my {query}", "who is my {query}", "do you remember my {query}",
+        "did you save it", "did you save it to memory", "did you save that",
+        "what did you just save", "what did you just remember",
+        "what do you have saved", "what is in your memory", "what's in memory",
+        "do you save stuff to memory", "can you auto save stuff to memory",
+    ],
 )
 def recall(query: str = "") -> str:
     mems = state.list_memories(limit=12, query=query or "")
@@ -192,6 +201,30 @@ def recall(query: str = "") -> str:
     for m in mems:
         rows.append(f"  • {m['text']}")
     return "\n".join(rows)
+
+
+@skill(
+    "who_am_i",
+    "Answer 'who am I' / 'what is my name' from long-term memory.",
+    {"type": "object", "properties": {}},
+    triggers=[
+        "who am i", "what is my name", "do you know my name",
+        "you know my name", "say my name",
+    ],
+)
+def who_am_i() -> str:
+    for m in state.list_memories(limit=100):
+        hit = re.search(
+            r"(?:my name is|call me|name is|i am called)\s+([A-Za-z][\w'’ .-]{0,38})",
+            m["text"], re.I,
+        )
+        if hit:
+            who = hit.group(1).strip().rstrip(".")
+            return f"You're {who}, {config.user_title}. It's right there in my memory."
+    return (
+        f"You haven't told me your name yet, {config.user_title}. "
+        "Say \"remember my name is …\" and I'll never forget it."
+    )
 
 
 @skill(
@@ -217,6 +250,107 @@ def run_workflow(name: str) -> str:
         out = run_skill(step["skill"], step.get("arguments", {}))
         results.append(f"  • {step['skill']}: {out.splitlines()[0][:120]}")
     return "\n".join(results)
+
+
+@skill(
+    "create_routine",
+    "Create a scheduled routine: a job Jarvis runs by itself on a schedule and "
+    "reports back on. Schedule in plain English: 'every morning', 'every day at 5pm', "
+    "'every 2 hours', 'every monday at 9am', 'in 30 minutes'.",
+    {
+        "type": "object",
+        "properties": {
+            "schedule": {"type": "string", "description": "When to run, plain English"},
+            "prompt": {"type": "string", "description": "What Jarvis should do each run"},
+            "name": {"type": "string", "description": "Short name, e.g. 'Morning mail check'"},
+        },
+        "required": ["schedule", "prompt"],
+    },
+    triggers=["every {schedule} {prompt}",
+              "create a routine: {schedule}", "set a routine: {schedule}"],
+)
+def create_routine(schedule: str = "", prompt: str = "", name: str = "") -> str:
+    from ..routines import human, parse_schedule
+
+    # Offline trigger "every {schedule} {prompt}" can mis-split at word one
+    # ("every day at 5pm …" → schedule="day"). Re-split the combined tail at
+    # the first recognizable time phrase, which is the real boundary.
+    sched_text, steps = (schedule or "").strip(), (prompt or "").strip()
+    trust = (
+        bool(sched_text)
+        and sched_text.startswith(("every", "daily", "at ", "in ", "tomorrow"))
+        and parse_schedule(sched_text) is not None
+        and bool(steps)
+    )
+    if not trust:
+        combined = ("every " + sched_text + " " + steps).strip() if sched_text and not sched_text.startswith(("every", "daily", "at ", "in ", "tomorrow")) else f"{sched_text} {steps}".strip()
+        # split at the END of the first recognizable time phrase; narrower
+        # clock patterns win over broad ones regardless of position
+        tm = None
+        for pat in (
+            r"\bat\s+\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)\b"
+            r"|\b\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)\b"
+            r"|\b(?:[01]?\d|2[0-3])[:.][0-5]\d\b",
+            r"\bin\s+\d+\s+(?:minutes?|mins?|hours?|hrs?|days?)\b"
+            r"|\bevery\s+\d+\s+(?:minutes?|mins?|hours?|hrs?)\b"
+            r"|\b(?:every\s+)?(?:morning|afternoon|evening|night)\b"
+            r"|\b(?:every\s+)?(?:mon|tues|wednes|thurs|fri|satur|sun)days?\b"
+            r"|\b(?:every day|daily|every hour|hourly)\b",
+        ):
+            tm = re.search(pat, combined, re.I)
+            if tm:
+                break
+        if tm:
+            sched_text = combined[: tm.end()].strip()
+            tail = combined[tm.end():].strip(" ,")
+            if tail:
+                steps = tail
+    sched = parse_schedule(sched_text)
+    if not sched:
+        return ("I couldn't make out when. Try: 'every morning', 'every day at 5pm', "
+                "'every 2 hours', 'every monday at 9am', or 'in 30 minutes'.")
+    if not steps.strip():
+        return "What should the routine actually do? Give me the steps in plain words."
+    state.add_routine(name or "Routine", steps.strip(), sched)
+    return f"Routine saved — fires {human(sched)}. It runs with my full brain and reports back here."
+
+
+@skill(
+    "list_routines",
+    "List the scheduled routines Jarvis runs automatically.",
+    {"type": "object", "properties": {}},
+    triggers=["list my routines", "what routines do i have", "show my routines"],
+)
+def list_routines() -> str:
+    from ..routines import human
+
+    routines = state.list_routines()
+    if not routines:
+        return "No routines yet. Say e.g. 'every morning brief me on my tasks'."
+    rows = ["Your routines:"]
+    for r in routines:
+        last = r.get("last_run") or "never run yet"
+        rows.append(
+            f"  • {r['name']} — {human(r.get('schedule', {}))} "
+            f"[{r['id']}]  (last: {last}; {'on' if r.get('enabled', True) else 'done'})"
+        )
+    return "\n".join(rows)
+
+
+@skill(
+    "delete_routine",
+    "Delete a scheduled routine by name or id.",
+    {
+        "type": "object",
+        "properties": {"routine": {"type": "string", "description": "Routine name or id"}},
+        "required": ["routine"],
+    },
+    triggers=["delete the routine {routine}", "remove routine {routine}", "stop routine {routine}"],
+)
+def delete_routine(routine: str = "") -> str:
+    if state.delete_routine((routine or "").strip()):
+        return f"Routine '{routine}' removed."
+    return f"No routine matching '{routine}'."
 
 
 @skill(
@@ -264,3 +398,30 @@ def executive_briefing() -> str:
         pass
     parts.append(system_status().replace("\n", "; "))
     return "\n".join(parts)
+
+
+@skill(
+    "clipboard_history",
+    "Answer 'what did I copy earlier', search recent clipboard text, or copy something back.",
+    {
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "Optional text to search for"}},
+    },
+    triggers=[
+        "what did i copy", "what did i copy earlier", "clipboard history",
+        "read my clipboard", "what's on my clipboard", "whats on my clipboard",
+        "search my clipboard for {query}", "find in my clipboard {query}",
+        "did i copy {query}", "what's in my clipboard {query}",
+    ],
+)
+def clipboard_history(query: str = "") -> str:
+    items = state.get_clipboard(limit=8, query=query)
+    if not items:
+        return ("Nothing" + (f" about '{query}'" if query else "") + " in clipboard memory yet. "
+                "Flip '📋 Clipboard memory' on in The Watcher to start keeping copies.")
+    lines = ["What you've copied recently:" if not query else f"Clipboard items matching '{query}':"]
+    for it in reversed(items):
+        snippet = it["text"].replace("\n", " ")
+        lines.append(f"  • {snippet[:90]}{'…' if len(it['text']) > 90 else ''}" +
+                     (f"  (from {it['app']})" if it.get("app") else ""))
+    return "\n".join(lines)
