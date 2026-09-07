@@ -11,7 +11,8 @@ pythonnet>=3.0 ; sys_platform == 'win32'   # WebView2 backend on Windows
 
 # ───────────────────── PC control (Windows) ────────────────────────
 psutil>=5.9               # CPU / memory / battery / processes
-pyautogui>=0.9.54         # media & virtual keys
+pyautogui>=0.9.54         # media & virtual keys (computer use)
+pynput>=1.7               # observer typing-log (opt-in; JARVIS_OBSERVE_TEXT)
 pillow>=10.0              # screenshots, app icon
 pycaw>=20230407 ; sys_platform == 'win32'   # precise volume control
 comtypes>=1.2 ; sys_platform == 'win32'
@@ -21,6 +22,10 @@ pyttsx3>=2.90             # offline text to speech
 SpeechRecognition>=3.10   # microphone input
 # pyaudio                 # needed by SpeechRecognition
 #                           Windows: pip install pipwin && pipwin install pyaudio
+
+# ─────────────────────── resident assistant (optional) ─────────────
+pystray>=0.19             # system-tray icon: close-to-tray instead of quit
+qrcode>=7.4               # QR code for pairing a phone on the local network
 
 # ───────────────────────────── extras ──────────────────────────────
 pywhatkit>=5.4            # optional: play the real first YouTube result

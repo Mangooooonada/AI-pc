@@ -51,6 +51,12 @@ def set_timer(minutes: float | str = 5, label: str = "") -> str:
         time.sleep(max(0.0, (fire_at - _dt.datetime.now()).total_seconds()))
         entry["done"] = True
         try:
+            from .. import state
+
+            state.add_notification(f"Timer done: {entry['label']}.")
+        except Exception:
+            pass
+        try:
             from ..voice.tts import speak
 
             speak(f"{config.user_title}, your {entry['label']} is up.")
@@ -202,3 +208,65 @@ def list_capabilities() -> str:
     for sk in sorted(REGISTRY.values(), key=lambda s: s.name):
         rows.append(f"  • {sk.name} — {sk.description.split('.')[0]}")
     return "\n".join(rows)
+
+
+@skill(
+    "recall_conversations",
+    "Search the saved conversation log for past exchanges — 'what was our first conversation', 'what did we talk about X', 'do you remember when I asked Y'.",
+    {
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "Topic/keywords to search past conversations for (empty = first or recent)"}},
+        "required": [],
+    },
+    triggers=["what was our first conversation", "our first conversation",
+              "what was our first convo", "our first convo", "revisit it",
+              "revisit our conversation", "our earliest conversation",
+              "what did we talk about", "what did we talk about {query}",
+              "do you remember when i asked {query}", "do you remember when i said {query}",
+              "search my conversations for {query}", "find when i asked about {query}",
+              "when did i ask about {query}", "what did i ask you about {query}"],
+)
+def recall_conversations(query: str = "") -> str:
+    from .. import state
+    convos = state.recent_entries(500)  # chronological
+    if not convos:
+        return "No saved conversations yet — nothing to recall."
+    q = (query or "").strip().lower()
+    words = [w for w in q.split() if len(w) > 2 and w
+             not in ("the", "about", "our", "you", "your", "did", "we")]
+    if not words:
+        # bare form: first conversation + latest topics
+        first = convos[0]
+        try:
+            from datetime import datetime
+            when = datetime.fromisoformat(first.get("at", "")).strftime("%b %d, %H:%M")
+        except Exception:
+            when = "?"
+        out = [f"Our first saved conversation was {when}:"]
+        out.append(f"  You: “{first['user'][:90]}”")
+        out.append(f"  Me: “{first['reply'][:120]}”")
+        out.append(f"({len(convos)} exchanges are saved in total; ask "
+                   "'what did we talk about <topic>' to search them.)")
+        return "\n".join(out)
+    scored = []
+    for c in convos:
+        hay = (c["user"] + " " + c["reply"]).lower()
+        hits = sum(hay.count(w) for w in words)
+        if hits:
+            scored.append((hits, c))
+    if not scored:
+        return (f"I searched the {len(convos)} saved conversations for "
+                f"'{q}' and found nothing. Different words?")
+    scored.sort(key=lambda t: (t[0], t[1].get("at", "")))
+    top = scored[-3:]
+    top.reverse()
+    from datetime import datetime
+    out = [f"From the saved conversations, best matches for '{q}':"]
+    for _, c in top[:3]:
+        try:
+            when = datetime.fromisoformat(c.get("at", "")).strftime("%b %d, %H:%M")
+        except Exception:
+            when = "?"
+        out.append(f"\n{when}:  you asked “{c['user'][:80]}”")
+        out.append(f"   and I said “{c['reply'][:140]}”")
+    return "\n".join(out)

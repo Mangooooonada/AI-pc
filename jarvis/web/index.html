@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#03080f">
+  <link rel="apple-touch-icon" href="/icon-192.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>JARVIS Command Center</title>
@@ -165,10 +168,12 @@
           <div class="row-tools">
             <select id="provider">
               <option value="auto">Brain: Auto</option>
-              <option value="openai">OpenAI / compatible</option>
               <option value="ollama">Ollama (local)</option>
+              <option value="openai">OpenAI / compatible</option>
+              <option value="remote">Remote Jarvis</option>
               <option value="offline">Offline engine</option>
             </select>
+            <button class="mini" id="btn-diag" title="Why is the brain not answering? Probes Ollama, the cloud key and a remote brain.">Diagnose</button>
             <button class="btn-ghost" id="btn-reset">Clear</button>
           </div>
         </div>
@@ -248,6 +253,39 @@
   </section>
 
   <!-- ─── TOOLS & SKILLS ─── -->
+  <section class="view" data-view="watcher">
+    <header><h2>The Watcher</h2><span class="sub" id="watch-sub">…</span></header>
+    <div class="card-grid">
+      <div class="card">
+        <h3>Eyes & Ears</h3>
+        <div id="watch-toggles"></div>
+        <p class="st-note" style="margin-top:8px">Everything below is LOCAL — it lives in this
+          machine's memory only. Screenshots auto-purge on rollover and at app exit unless you
+          opt to keep them.</p>
+      </div>
+      <div class="card">
+        <h3>What I'm looking at right now</h3>
+        <div id="watch-focus"></div>
+      </div>
+      <div class="card">
+        <h3>Today by app <span class="sub" id="watch-usage-sub"></span></h3>
+        <div id="watch-usage"></div>
+      </div>
+      <div class="card">
+        <h3>Recently copied</h3>
+        <div class="list" id="watch-clipboard"></div>
+      </div>
+      <div class="card">
+        <h3>Focus reel</h3>
+        <div class="list" id="watch-activity"></div>
+      </div>
+      <div class="card wide">
+        <h3>Screenshot timeline <span class="sub" id="watch-shot-count"></span></h3>
+        <div id="watch-shots" class="shot-grid"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="view" data-view="tools">
     <div class="card full">
       <div class="card-h"><h2>Tools &amp; Skills</h2><span class="chip-sm" id="tool-count">—</span></div>
@@ -259,8 +297,46 @@
   <!-- ─── WORKFLOWS ─── -->
   <section class="view" data-view="workflows">
     <div class="card full">
+      <div class="card-h"><h2>Routines</h2>
+        <button class="mini" id="rt-add">+ new routine</button></div>
+      <div class="wf-grid" id="rt-grid"></div>
+      <p class="dim" style="margin:2px 2px 12px;font-size:11px">
+        Routines run on their own — through the full agent brain — and report back as toasts + voice.
+        Missing a slot while the PC sleeps fires once at wake, never in bursts.</p>
+    </div>
+    <div class="card full">
       <div class="card-h"><h2>Workflows</h2></div>
       <div class="wf-grid" id="wf-grid"></div>
+    </div>
+  </section>
+
+  <!-- ─── SETTINGS ─── -->
+  <section class="view" data-view="settings">
+    <div class="card full">
+      <div class="card-h">
+        <h2>Settings</h2>
+        <span class="chip-sm">saved to .env · applied instantly</span>
+        <div class="row-tools">
+          <button class="btn-ghost" id="settings-studio">Interface Studio ›</button>
+        </div>
+      </div>
+      <div class="studio" id="settings-groups"></div>
+    </div>
+  </section>
+
+  <!-- ─── INTERFACE STUDIO (theming) ─── -->
+  <section class="view" data-view="studio">
+    <div class="card full">
+      <div class="card-h">
+        <h2>Interface Studio</h2>
+        <span class="chip-sm">saved on this device</span>
+        <div class="row-tools">
+          <button class="btn-ghost" id="theme-copy" title="Copy the current theme as JSON">Copy theme</button>
+          <button class="btn-ghost" id="theme-paste" title="Import a theme JSON blob">Paste theme</button>
+          <button class="btn-ghost" id="theme-reset">Reset to default</button>
+        </div>
+      </div>
+      <div class="studio" id="studio"></div>
     </div>
   </section>
 </main>
