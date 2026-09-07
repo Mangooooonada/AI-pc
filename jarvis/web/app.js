@@ -22,26 +22,7 @@ const $$ = (s) => [...document.querySelectorAll(s)];
   };
 })();
 
-const api = async (path, opts = {}) => {
-  // opts.timeout (ms) bounds the whole request+read. Polls use it so a
-  // wedged request can never freeze the dashboard on BOOTING/PROCESSING —
-  // the fetch throws, the poll's catch shows the retry state, and the next
-  // interval tick tries again. Callers that supply their own AbortSignal
-  // (watcher refresh) or need unbounded waits (chat) simply omit timeout.
-  const { timeout = 0, ...rest } = opts || {};
-  if (!timeout || rest.signal) {
-    const r = await fetch(path, rest);
-    return r.json();
-  }
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), timeout);
-  try {
-    const r = await fetch(path, { ...rest, signal: ctl.signal });
-    return await r.json();
-  } finally {
-    clearTimeout(timer);
-  }
-};
+const api = async (path, opts) => (await fetch(path, opts)).json();
 const post = (path, body) =>
   api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
 
@@ -256,8 +237,8 @@ async function loadSettings() {
   const speakOn = localStorage.getItem("jarvis.speak") !== "off";
   const listenOn = localStorage.getItem("jarvis.listen") === "on";
   let bootState = null, netState = null;
-  try { bootState = await api("/api/autostart", { timeout: 10000 }); } catch {}
-  try { netState = await api("/api/network", { timeout: 10000 }); } catch {}
+  try { bootState = await api("/api/autostart"); } catch {}
+  try { netState = await api("/api/network"); } catch {}
   const netQr = netState?.enabled && netState.url
     ? `<div class="st-net">${netState.qr ? `<img src="${netState.qr}" alt="QR" class="st-qr">` : ""}
        <div class="st-net-meta"><code>${esc(netState.url)}</code>
@@ -682,27 +663,7 @@ function tickClock() {
 // touch a panel when its data actually changed.
 let WATCH_BUSY = false;
 let WATCH_AGAIN = false;
-let WATCH_FOCUS_SINCE = 0;  // epoch s the current app got the floor (for the 1s ticker)
-let WATCH_SIG = { toggles: "", focus: "", usage: "", clipboard: "", activity: "", shots: "" };
-
-function fmtDur(secs) {
-  secs = Math.max(0, Math.round(secs || 0));
-  if (!secs) return "0m";
-  if (secs < 60) return secs + "s";
-  const h = Math.floor(secs / 3600), m = Math.round((secs % 3600) / 60);
-  return h ? `${h}h ${String(m).padStart(2, "0")}m` : m + "m";
-}
-function fmtDurFull(secs) {
-  secs = Math.max(0, Math.floor(secs || 0));
-  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
-  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
-           : `${m}:${String(s).padStart(2, "0")}`;
-}
-setInterval(() => {  // second-hand for the "right now" timer — local, no API
-  const t = $("#watch-focus-time");
-  if (t && WATCH_FOCUS_SINCE && $$(".view.active")[0]?.dataset.view === "watcher")
-    t.textContent = fmtDurFull(Date.now() / 1000 - WATCH_FOCUS_SINCE);
-}, 1000);
+let WATCH_SIG = { toggles: "", focus: "", clipboard: "", activity: "", shots: "" };
 
 function watchChanged(key, value) {
   const sig = JSON.stringify(value ?? null);
@@ -751,30 +712,10 @@ async function loadWatch() {
     }
 
     if (watchChanged("focus", d.focused || {})) {
-      WATCH_FOCUS_SINCE = (d.observer && d.focus_since) ? d.focus_since : 0;
       $("#watch-focus").innerHTML = d.observer && d.focused?.app
         ? `<div class="watch-focus-app">${esc(d.focused.app)}</div>
-           <div class="st-note" style="font-size:11.5px">${esc(d.focused.title || "(no window title)")}</div>
-           <div class="watch-focus-time" id="watch-focus-time">${WATCH_FOCUS_SINCE ? fmtDurFull(Date.now() / 1000 - WATCH_FOCUS_SINCE) : ""}</div>
-           <div class="st-note" style="margin-top:-4px">on this app — it's banking minutes in “Today by app”</div>`
-        : `<div class="st-note">Nothing yet — flip 👁 Observer on and the app you're in (with a live timer) appears here in seconds. Switching browser tabs won't spam this card; only apps count as new focus.</div>`;
-    }
-    if (watchChanged("usage", d.usage_today || [])) {
-      const usage = d.usage_today || [];
-      const maxU = Math.max(1, ...usage.map((u) => u.secs));
-      $("#watch-usage").innerHTML = usage.length
-        ? usage.map((u) =>
-          `<div class="usage-item">
-             <div class="usage-row">
-               <span class="usage-app" title="${esc(u.app)}">${esc(u.app)}</span>
-               <span class="usage-bar"><i style="width:${Math.max(3, Math.round((u.secs / maxU) * 100))}%"></i></span>
-               <span class="usage-min">${fmtDur(u.secs)}</span>
-             </div>
-             <div class="usage-title">${u.top_title ? esc((u.top_title || "").slice(0, 46)) : ""}</div>
-           </div>`).join("")
-        : `<span class="st-note">No time tracked yet — flip 👁 Observer on and focused minutes start banking here, kept day by day across restarts.</span>`;
-      const us = $("#watch-usage-sub");
-      if (us) us.textContent = d.history_days ? `${d.history_days} day${d.history_days === 1 ? "" : "s"} kept` : "";
+           <div class="st-note">${esc(d.focused.title || "(no window title)")}</div>`
+        : `<div class="st-note">Nothing — the observer is off${d.observer ? " (or the desktop can't be read here)" : ""}.</div>`;
     }
     if (watchChanged("clipboard", d.clipboard_recent || [])) {
       $("#watch-clipboard").innerHTML = (d.clipboard_recent || []).slice().reverse().map((c) =>
@@ -785,8 +726,8 @@ async function loadWatch() {
     if (watchChanged("activity", d.activity || [])) {
       $("#watch-activity").innerHTML = (d.activity || []).slice().reverse().map((a) =>
         `<div class="li"><span>${esc(a.app || "?")}</span>
-         <span class="st-note">${esc((a.title || "").slice(0, 52))} · ${fmtWhen(a.at)}${a.secs ? " · " + fmtDur(a.secs) : ""}</span></div>`
-      ).join("") || '<div class="li"><span class="st-note">No focus switches yet — one row per app, so a long Chrome run is ONE row, not a tab flood.</span></div>';
+         <span class="st-note">${esc((a.title || "").slice(0, 60))} · ${fmtWhen(a.at)}</span></div>`
+      ).join("") || '<div class="li"><span class="st-note">No sightings yet.</span></div>';
     }
 
     $("#watch-shot-count").textContent = d.shots_on ? `(${d.shots_total} on disk, last 8 shown)` : "(off)";
@@ -815,7 +756,7 @@ setInterval(() => {  // light, deduplicated refresh while you're on the view
 
 async function loadStatus() {
   try {
-    STATUS = await api("/api/status", { timeout: 15000 });
+    STATUS = await api("/api/status");
   (STATUS.alerts || []).forEach((a) => {
     toast(`🔔 ${a.text}`, "good");
     if (SPEAK_BACK) say(a.text);
@@ -847,29 +788,20 @@ async function loadStatus() {
     ${(STATUS.notes || []).map((n) => `<li style="color:var(--warn)">${n}</li>`).join("")}`;
 
   const sel = $("#provider");
-  // A router brain means Auto is doing its thing; any live brain else
-  // (incl. the remote Jarvis preset) should light its own dropdown option.
-  const PROV_OPTIONS = ["openai", "ollama", "remote", "offline"];
-  if (sel) sel.value = PROV_OPTIONS.includes(STATUS.provider) ? STATUS.provider : "auto";
+  if (sel) sel.value = ["openai", "ollama", "offline"].includes(STATUS.provider) ? STATUS.provider : "auto";
   setCount("tools", STATUS.skills);
   $("#tool-count").textContent = `${STATUS.skills} registered`;
   $("#mem-turns").textContent = STATUS.stats?.session_turns ?? 0;
   $("#mem-tools").textContent = STATUS.stats?.tool_calls ?? 0;
   } catch (e) {
-    // Backend hiccup (or the 15s watchdog fired): the dashboard must NEVER
-    // freeze in BOOTING. Two traps avoided: never overwrite pill.textContent
-    // (that deletes the #sys-state node, so the NEXT successful poll throws
-    // on a null deref and "LINK DOWN" sticks forever), and never paint inline
-    // colors (they'd beat the .warn class on recovery).
-    const st = document.querySelector("#sys-state");
-    if (st) st.textContent = "LINK DOWN — retrying";
+    // backend (or your own hiccup): the dashboard must NEVER freeze in BOOTING
     const pill = document.querySelector("#sys-pill");
-    if (pill) pill.classList.add("warn");
+    if (pill) { pill.textContent = "LINK DOWN — retrying"; pill.style.color = "#f0b35c"; }
     try { post("/api/uierror", { text: "loadStatus: " + (e && e.message || e) }); } catch (_2) {}
   }
 }
 async function loadSystem() {
-  const d = await api("/api/system", { timeout: 8000 });
+  const d = await api("/api/system");
   for (const key of ["cpu", "memory", "disk"]) {
     const dial = document.querySelector(`.dial[data-key="${key}"]`);
     if (!dial) continue;
@@ -882,7 +814,7 @@ async function loadSystem() {
 }
 
 async function loadFeed() {
-  const { items } = await api("/api/feed", { timeout: 15000 });
+  const { items } = await api("/api/feed");
   const warn = items.filter((i) => i.kind === "warn").length;
   $("#feed-badge").textContent = warn;
   $("#feed-badge").hidden = !warn;
@@ -901,7 +833,7 @@ async function loadFeed() {
 const AGENT_COLOR = { core: "", system: "green", voice: "violet", memory: "violet", task: "amber", research: "" };
 
 async function loadAgents() {
-  const { agents } = await api("/api/agents", { timeout: 15000 });
+  const { agents } = await api("/api/agents");
   const html = agents.map((a) =>
     `<div class="agent ${a.status}" data-c="${AGENT_COLOR[a.id] || ""}">
        <div class="ag-ic">${svg(a.icon)}</div>
@@ -916,7 +848,7 @@ async function loadAgents() {
 }
 
 async function loadLLMs() {
-  const { providers } = await api("/api/llms", { timeout: 15000 });
+  const { providers } = await api("/api/llms");
   const on = providers.filter((p) => p.connected).length;
   $("#llm-count").textContent = `${on} connected`;
   const html = providers.map((p) =>
@@ -929,7 +861,7 @@ async function loadLLMs() {
 }
 
 async function loadTasks() {
-  const { tasks, timeline, overdue } = await api("/api/tasks", { timeout: 15000 });
+  const { tasks, timeline, overdue } = await api("/api/tasks");
   const open = tasks.filter((t) => !t.done);
   setCount("tasks", open.length);
   $("#task-count").textContent = `${open.length} open${overdue ? ` · ${overdue} overdue` : ""}`;
@@ -960,7 +892,7 @@ async function loadTasks() {
 }
 
 async function loadMemory() {
-  const { memories, total } = await api("/api/memory", { timeout: 15000 });
+  const { memories, total } = await api("/api/memory");
   $("#mem-total").textContent = total;
   $("#memory-count").textContent = `${total} stored`;
   setCount("memory", total);
@@ -1004,7 +936,7 @@ function drawMemGraph(n) {
 }
 
 async function loadConversations() {
-  const { conversations } = await api("/api/conversations", { timeout: 15000 });
+  const { conversations } = await api("/api/conversations");
   setCount("conversations", conversations.length);
   $("#convo-list").innerHTML = conversations.length ? conversations.map((c) =>
     `<div class="convo"><div class="cu">› ${esc(c.user)}</div>
@@ -1015,7 +947,7 @@ async function loadConversations() {
 
 let SKILLS = [];
 async function loadSkills() {
-  if (!SKILLS.length) SKILLS = (await api("/api/skills", { timeout: 15000 })).skills;
+  if (!SKILLS.length) SKILLS = (await api("/api/skills")).skills;
   renderSkills($("#skill-filter").value || "");
 }
 function renderSkills(filter) {
@@ -1036,7 +968,7 @@ function renderSkills(filter) {
 }
 
 async function loadRoutines() {
-  const { routines } = await api("/api/routines", { timeout: 15000 });
+  const { routines } = await api("/api/routines");
   const grid = $("#rt-grid");
   grid.innerHTML = routines.length ? routines.map((r) =>
     `<div class="wf"><h3>🕐 ${esc(r.name)}</h3>
@@ -1061,7 +993,7 @@ async function loadRoutines() {
 }
 
 async function loadWorkflows() {
-  const { workflows } = await api("/api/workflows", { timeout: 15000 });
+  const { workflows } = await api("/api/workflows");
   loadRoutines();
   setCount("workflows", workflows.length);
   $("#wf-grid").innerHTML = workflows.map((w) =>
@@ -1096,7 +1028,7 @@ async function loadQuick() {
 }
 
 async function loadEnvironment() {
-  const e = await api("/api/environment", { timeout: 15000 });
+  const e = await api("/api/environment");
   $("#sb-location").textContent = e.location;
   $("#sb-weather").textContent = e.weather ? `${e.weather.temp}°F ${e.weather.text}` : "Unavailable";
   $("#sb-network").textContent = e.network;
@@ -1482,21 +1414,6 @@ function refreshDash() { loadStatus(); loadFeed(); loadTasks(); loadMemory(); lo
       fellBack || s.notes?.length ? "warn" : "",
     );
     loadStatus(); loadLLMs(); loadAgents();
-  };
-  const diagBtn = $("#btn-diag");
-  if (diagBtn) diagBtn.onclick = async () => {
-    diagBtn.disabled = true;
-    try {
-      const d = await api("/api/providers/diagnose", { timeout: 30000 });
-      const ps = d.providers || [];
-      const lines = ps.map((p) =>
-        `${p.ok ? "✅" : "❌"} ${p.name}: ${p.detail}${p.ok ? ` (${p.latency_ms}ms)` : ""}`);
-      toast(lines.join("\n"), ps.some((p) => !p.ok) ? "warn" : "");
-    } catch (err) {
-      toast("Diagnose failed: " + (err && err.message || err), "err");
-    } finally {
-      diagBtn.disabled = false;
-    }
   };
   $("#search").oninput = (e) => {
     const q = e.target.value.trim();
