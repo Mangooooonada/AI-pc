@@ -827,8 +827,7 @@ def get_provider(force: Optional[str] = None):
                     if getattr(only, "note", None):
                         errors.append(only.note)
                     return only, errors
-                continue  # neither local nor cloud → fall through to remote/openai/offline
-            if candidate == "remote":
+                continue
                 provider = RemoteJarvisProvider()
                 if getattr(provider, "note", None):
                     errors.append(provider.note)

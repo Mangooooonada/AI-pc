@@ -22,26 +22,7 @@ const $$ = (s) => [...document.querySelectorAll(s)];
   };
 })();
 
-const api = async (path, opts = {}) => {
-  // opts.timeout (ms) bounds the whole request+read. Polls use it so a
-  // wedged request can never freeze the dashboard on BOOTING/PROCESSING —
-  // the fetch throws, the poll's catch shows the retry state, and the next
-  // interval tick tries again. Callers that supply their own AbortSignal
-  // (watcher refresh) or need unbounded waits (chat) simply omit timeout.
-  const { timeout = 0, ...rest } = opts || {};
-  if (!timeout || rest.signal) {
-    const r = await fetch(path, rest);
-    return r.json();
-  }
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), timeout);
-  try {
-    const r = await fetch(path, { ...rest, signal: ctl.signal });
-    return await r.json();
-  } finally {
-    clearTimeout(timer);
-  }
-};
+const api = async (path, opts) => (await fetch(path, opts)).json();
 const post = (path, body) =>
   api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
 
@@ -256,8 +237,8 @@ async function loadSettings() {
   const speakOn = localStorage.getItem("jarvis.speak") !== "off";
   const listenOn = localStorage.getItem("jarvis.listen") === "on";
   let bootState = null, netState = null;
-  try { bootState = await api("/api/autostart", { timeout: 10000 }); } catch {}
-  try { netState = await api("/api/network", { timeout: 10000 }); } catch {}
+  try { bootState = await api("/api/autostart"); } catch {}
+  try { netState = await api("/api/network"); } catch {}
   const netQr = netState?.enabled && netState.url
     ? `<div class="st-net">${netState.qr ? `<img src="${netState.qr}" alt="QR" class="st-qr">` : ""}
        <div class="st-net-meta"><code>${esc(netState.url)}</code>
@@ -775,7 +756,7 @@ setInterval(() => {  // light, deduplicated refresh while you're on the view
 
 async function loadStatus() {
   try {
-    STATUS = await api("/api/status", { timeout: 15000 });
+    STATUS = await api("/api/status");
   (STATUS.alerts || []).forEach((a) => {
     toast(`🔔 ${a.text}`, "good");
     if (SPEAK_BACK) say(a.text);
@@ -807,29 +788,20 @@ async function loadStatus() {
     ${(STATUS.notes || []).map((n) => `<li style="color:var(--warn)">${n}</li>`).join("")}`;
 
   const sel = $("#provider");
-  // A router brain means Auto is doing its thing; any live brain else
-  // (incl. the remote Jarvis preset) should light its own dropdown option.
-  const PROV_OPTIONS = ["openai", "ollama", "remote", "offline"];
-  if (sel) sel.value = PROV_OPTIONS.includes(STATUS.provider) ? STATUS.provider : "auto";
+  if (sel) sel.value = ["openai", "ollama", "offline"].includes(STATUS.provider) ? STATUS.provider : "auto";
   setCount("tools", STATUS.skills);
   $("#tool-count").textContent = `${STATUS.skills} registered`;
   $("#mem-turns").textContent = STATUS.stats?.session_turns ?? 0;
   $("#mem-tools").textContent = STATUS.stats?.tool_calls ?? 0;
   } catch (e) {
-    // Backend hiccup (or the 15s watchdog fired): the dashboard must NEVER
-    // freeze in BOOTING. Two traps avoided: never overwrite pill.textContent
-    // (that deletes the #sys-state node, so the NEXT successful poll throws
-    // on a null deref and "LINK DOWN" sticks forever), and never paint inline
-    // colors (they'd beat the .warn class on recovery).
-    const st = document.querySelector("#sys-state");
-    if (st) st.textContent = "LINK DOWN — retrying";
+    // backend (or your own hiccup): the dashboard must NEVER freeze in BOOTING
     const pill = document.querySelector("#sys-pill");
-    if (pill) pill.classList.add("warn");
+    if (pill) { pill.textContent = "LINK DOWN — retrying"; pill.style.color = "#f0b35c"; }
     try { post("/api/uierror", { text: "loadStatus: " + (e && e.message || e) }); } catch (_2) {}
   }
 }
 async function loadSystem() {
-  const d = await api("/api/system", { timeout: 8000 });
+  const d = await api("/api/system");
   for (const key of ["cpu", "memory", "disk"]) {
     const dial = document.querySelector(`.dial[data-key="${key}"]`);
     if (!dial) continue;
@@ -842,7 +814,7 @@ async function loadSystem() {
 }
 
 async function loadFeed() {
-  const { items } = await api("/api/feed", { timeout: 15000 });
+  const { items } = await api("/api/feed");
   const warn = items.filter((i) => i.kind === "warn").length;
   $("#feed-badge").textContent = warn;
   $("#feed-badge").hidden = !warn;
@@ -861,7 +833,7 @@ async function loadFeed() {
 const AGENT_COLOR = { core: "", system: "green", voice: "violet", memory: "violet", task: "amber", research: "" };
 
 async function loadAgents() {
-  const { agents } = await api("/api/agents", { timeout: 15000 });
+  const { agents } = await api("/api/agents");
   const html = agents.map((a) =>
     `<div class="agent ${a.status}" data-c="${AGENT_COLOR[a.id] || ""}">
        <div class="ag-ic">${svg(a.icon)}</div>
@@ -876,7 +848,7 @@ async function loadAgents() {
 }
 
 async function loadLLMs() {
-  const { providers } = await api("/api/llms", { timeout: 15000 });
+  const { providers } = await api("/api/llms");
   const on = providers.filter((p) => p.connected).length;
   $("#llm-count").textContent = `${on} connected`;
   const html = providers.map((p) =>
@@ -889,7 +861,7 @@ async function loadLLMs() {
 }
 
 async function loadTasks() {
-  const { tasks, timeline, overdue } = await api("/api/tasks", { timeout: 15000 });
+  const { tasks, timeline, overdue } = await api("/api/tasks");
   const open = tasks.filter((t) => !t.done);
   setCount("tasks", open.length);
   $("#task-count").textContent = `${open.length} open${overdue ? ` · ${overdue} overdue` : ""}`;
@@ -920,7 +892,7 @@ async function loadTasks() {
 }
 
 async function loadMemory() {
-  const { memories, total } = await api("/api/memory", { timeout: 15000 });
+  const { memories, total } = await api("/api/memory");
   $("#mem-total").textContent = total;
   $("#memory-count").textContent = `${total} stored`;
   setCount("memory", total);
@@ -964,7 +936,7 @@ function drawMemGraph(n) {
 }
 
 async function loadConversations() {
-  const { conversations } = await api("/api/conversations", { timeout: 15000 });
+  const { conversations } = await api("/api/conversations");
   setCount("conversations", conversations.length);
   $("#convo-list").innerHTML = conversations.length ? conversations.map((c) =>
     `<div class="convo"><div class="cu">› ${esc(c.user)}</div>
@@ -975,7 +947,7 @@ async function loadConversations() {
 
 let SKILLS = [];
 async function loadSkills() {
-  if (!SKILLS.length) SKILLS = (await api("/api/skills", { timeout: 15000 })).skills;
+  if (!SKILLS.length) SKILLS = (await api("/api/skills")).skills;
   renderSkills($("#skill-filter").value || "");
 }
 function renderSkills(filter) {
@@ -996,7 +968,7 @@ function renderSkills(filter) {
 }
 
 async function loadRoutines() {
-  const { routines } = await api("/api/routines", { timeout: 15000 });
+  const { routines } = await api("/api/routines");
   const grid = $("#rt-grid");
   grid.innerHTML = routines.length ? routines.map((r) =>
     `<div class="wf"><h3>🕐 ${esc(r.name)}</h3>
@@ -1021,7 +993,7 @@ async function loadRoutines() {
 }
 
 async function loadWorkflows() {
-  const { workflows } = await api("/api/workflows", { timeout: 15000 });
+  const { workflows } = await api("/api/workflows");
   loadRoutines();
   setCount("workflows", workflows.length);
   $("#wf-grid").innerHTML = workflows.map((w) =>
@@ -1056,7 +1028,7 @@ async function loadQuick() {
 }
 
 async function loadEnvironment() {
-  const e = await api("/api/environment", { timeout: 15000 });
+  const e = await api("/api/environment");
   $("#sb-location").textContent = e.location;
   $("#sb-weather").textContent = e.weather ? `${e.weather.temp}°F ${e.weather.text}` : "Unavailable";
   $("#sb-network").textContent = e.network;

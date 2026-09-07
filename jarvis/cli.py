@@ -36,7 +36,7 @@ def _header(agent: Agent) -> None:
         print(_p("yellow", f"  note: {note}"))
     if st["provider"] == "offline":
         print(_p("yellow", "  Offline mode: direct commands only. See README to add a real model."))
-    print(_p("dim", "  commands: /help  /skills  /status  /provider  /voice  /reset  /quit\n"))
+    print(_p("dim", "  commands: /help  /skills  /status  /voice  /reset  /quit\n"))
 
 
 def _speak(text: str) -> None:
@@ -71,33 +71,9 @@ def chat_loop(agent: Agent, speak_replies: bool = False) -> None:
             for k, v in agent.status().items():
                 print(_p("dim", f"  {k}: {v}"))
             continue
-        if low == "/skills":
+        if low in {"/skills", "/help"}:
             for sk in sorted(REGISTRY.values(), key=lambda s: s.name):
                 print(f"  {_p('cyan', sk.name):<28} {sk.description.split('.')[0]}")
-            continue
-        if low == "/help":
-            for cmd, what in (
-                ("/help", "this list"),
-                ("/skills", "all registered skills"),
-                ("/status", "current brain, model and notes"),
-                ("/reset", "clear the conversation memory"),
-                ("/voice", "switch to hands-free wake-word mode"),
-                ("/provider ollama|openai|remote|offline|auto", "swap the brain live"),
-                ("/quit", "exit"),
-            ):
-                print(f"  {_p('cyan', cmd):<38} {what}")
-            continue
-        if low.startswith("/provider"):
-            bits = text.split(None, 1)
-            if len(bits) == 2 and bits[1].lower() in {
-                    "auto", "ollama", "openai", "remote", "offline"}:
-                st = agent.reload_provider(bits[1].lower())
-                print(_p("dim", f"  brain → {st['provider']} ({st['model']})"))
-                for note in st.get("notes", []):
-                    if note:
-                        print(_p("yellow", f"  note: {note}"))
-                continue
-            print(_p("yellow", "  usage: /provider auto | ollama | openai | remote | offline"))
             continue
         if low == "/voice":
             voice_loop(agent)
@@ -169,24 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if "--say" in argv:
         idx = argv.index("--say")
-        # The sentence is every non-flag token after --say; --speak and
-        # --provider NAME steer the reply instead of being spoken as text.
-        words: list[str] = []
-        i = idx + 1
-        while i < len(argv):
-            a = argv[i]
-            if a == "--provider" and i + 1 < len(argv):
-                i += 2
-                continue
-            if a == "--speak":
-                i += 1
-                continue
-            words.append(a)
-            i += 1
-        text = " ".join(words).strip()
-        if not text:
-            print("Nothing to say — pass a sentence:  python main.py say \"…\"")
-            return 1
+        text = " ".join(argv[idx + 1:])
         turn = agent.ask(text)
         print(turn.reply)
         if speak_replies:

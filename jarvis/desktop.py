@@ -74,19 +74,9 @@ def _free_port(preferred: int) -> int:
     return preferred
 
 
-def _wait_for_server(port: int, timeout: float = 25.0,
-                     alive: Optional[callable] = None) -> bool:
-    """True when a TCP connection to the backend succeeds.
-
-    `alive` (callable -> bool) reports whether the backend *thread* still
-    runs: if it died, waiting out the whole timeout just makes the user stare
-    at "BOOTING SYSTEMS…" for a backend that is never coming — bail early so
-    the boot-failure page (and the log) appear immediately instead.
-    """
+def _wait_for_server(port: int, timeout: float = 25.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if alive is not None and not alive():
-            return False
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.5):
                 return True
@@ -578,26 +568,12 @@ def run(port: Optional[int] = None, fullscreen: bool = False, dev: bool = False,
                 except Exception:
                     logger.exception("early backend thread died")
 
-            early_thread = threading.Thread(target=_early_serve, daemon=True,
-                                            name="jarvis-backend")
-            early_thread.start()
-            # Pre-warm the lazy Agent while the server boots, so the window is
-            # born into an already-answering UI (no post-paint "BOOTING" wait
-            # while the first /api/status probes providers).
-            from .server import warm_agent
-            prewarm = threading.Thread(target=warm_agent, daemon=True,
-                                       name="agent-prewarm")
-            prewarm.start()
-            if _wait_for_server(port, timeout=95.0,
-                                alive=lambda: early_thread.is_alive()):
-                prewarm.join(timeout=12.0)  # bounded; usually already done
+            threading.Thread(target=_early_serve, daemon=True,
+                             name="jarvis-backend").start()
+            if _wait_for_server(port, timeout=95.0):
                 _early_done = True
             else:
-                logger.warning(
-                    "early boot: backend didn't answer in time (thread %s); "
-                    "using legacy splash boot",
-                    "alive" if early_thread.is_alive() else "dead",
-                )
+                logger.warning("early boot: backend didn't answer in time; using legacy splash boot")
         except Exception:
             logger.exception("early boot failed; using legacy splash boot")
         if splash_tk is not None:
@@ -685,23 +661,14 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
         time.sleep(1.2)
         _splash_status("BACKEND WARMING…")  # no-op if the GUI isn't up yet
         t1 = time.time()
-        serve_thread = threading.Thread(target=_serve, daemon=True,
-                                        name="jarvis-backend")
-        serve_thread.start()
+        threading.Thread(target=_serve, daemon=True).start()
 
         # Wait (up to 90s — antivirus-scanned venvs make imports crawl) with
-        # heartbeat log lines so a slow boot is visible in the log. If the
-        # backend thread dies instead of serving, bail the moment it does —
-        # burning the remaining minutes on "BOOTING SYSTEMS…" for a backend
-        # that's never coming is exactly the stuck-boot complaint.
+        # heartbeat log lines so a slow boot is visible in the log.
         deadline = time.time() + 90.0
         last_beat = 0.0
         server_up = False
         while time.time() < deadline:
-            if not serve_thread.is_alive():
-                logger.error("backend thread died after %.1fs — showing boot failure",
-                             time.time() - t1)
-                break
             try:
                 with socket.create_connection(("127.0.0.1", port), timeout=0.5):
                     server_up = True
@@ -717,13 +684,6 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
         if server_up:
             logger.info("Backend ready after %.1fs; handing off to the UI", time.time() - t1)
             _splash_status("LOADING INTERFACE…")
-            # Pre-warm the lazy Agent here too (legacy path): the UI's first
-            # /api/status must not sit in BOOTING while providers probe.
-            try:
-                from .server import warm_agent
-                warm_agent()
-            except Exception:
-                logger.exception("agent pre-warm failed")
             # load_url() raises while the GUI loop isn't accepting calls yet
             # (and was the original stall); retry until it actually takes.
             gui_deadline = time.time() + 40.0
@@ -740,8 +700,7 @@ or try <b style="color:#3ce0ff">main.py web</b> for the browser version.</div>
                     time.sleep(0.8)
             logger.error("load_url was never accepted by the GUI backend")
         else:
-            logger.error("Backend failed to start on port %s (thread %s)",
-                         port, "alive but never answered" if serve_thread.is_alive() else "died")
+            logger.error("Backend failed to start on port %s within 90s", port)
         try:
             window.load_html(_dead_backend_html())
         except Exception:

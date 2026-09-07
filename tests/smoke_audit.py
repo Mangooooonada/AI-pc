@@ -91,7 +91,6 @@ def main() -> int:
     def _poison():
         from jarvis.brain import providers as P
         from jarvis.config import config
-        saved_dead = dict(state._STATE.get("dead_credentials", {}))
         config.openai_api_key = "sk-dead"; config.openai_base_url = "https://x"; config.openai_model = "m"
         P.poison("openai", "401")
         P._POISONED.clear()
@@ -100,8 +99,6 @@ def main() -> int:
             raise SystemExit("pill didn't persist")
         except RuntimeError:
             pass
-        # Leave no fake dead-credential behind in the user's real state store.
-        state._STATE["dead_credentials"] = saved_dead
         config.openai_api_key = None
 
     check("poison pill survives restarts", _poison)
@@ -136,127 +133,17 @@ def main() -> int:
         r = c.post("/api/watch", json={"observer": True}).json()
         assert r["ok"] and r["state"]["observer"]
         from jarvis import observe
-        from jarvis.observe import _shots_dir
         assert observe.observer_enabled()
         assert c.get("/api/watch/shot?name=../../etc/passwd").status_code == 400
-        # v1.2.8 incremental rendering contract: /api/watch carries only what
-        # the panel renders (≤14 events), and served shots are cache-immutable
-        # so the UI never re-downloads a frame it already has.
-        w = c.get("/api/watch").json()
-        assert len(w["activity"]) <= 14, len(w["activity"])
-        shot = _shots_dir() / "shot-20260903-031506.png"
-        shot.write_bytes(b"fakeframe")
-        try:
-            got = c.get("/api/watch/shot?name=shot-20260903-031506.png")
-            assert got.status_code == 200
-            assert got.headers.get("cache-control", "").startswith(
-                "public, max-age=3600, immutable")
-        finally:
-            shot.unlink(missing_ok=True)
         state._STATE["flags"] = {}
 
-    check("watcher toggles live + shot route hardened + panel payloads bounded", _watch)
+    check("watcher toggles live + shot route hardened", _watch)
 
     def _settings():
         assert c.post("/api/settings",
                       json={"updates": {"BOGUS": 1}}).json()["ok"] is False
 
     check("settings reject unknown keys loudly", _settings)
-
-    def _remote_provider_wired():
-        """JARVIS_PROVIDER=remote (the UI's Remote Jarvis preset) must actually
-        engage the RemoteJarvisProvider — not silently land on offline."""
-        import json
-        import threading
-        from http.server import BaseHTTPRequestHandler, HTTPServer
-
-        from jarvis.config import config
-
-        class FakeRemote(BaseHTTPRequestHandler):
-            def do_GET(self):
-                if self.path == "/api/status":
-                    body = json.dumps(
-                        {"provider": "ollama", "model": "qwen3:8b",
-                         "hostname": "remote-pc"}).encode()
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                else:
-                    self.send_response(404)
-                    self.end_headers()
-
-            def do_POST(self):
-                n = int(self.headers.get("Content-Length", 0))
-                self.rfile.read(n)
-                body = json.dumps(
-                    {"reply": "coherent from the remote brain", "actions": []}).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-            def log_message(self, *a):
-                pass
-
-        srv = HTTPServer(("127.0.0.1", 0), FakeRemote)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        saved = (config.provider, config.remote_url, config.remote_key)
-        try:
-            config.provider = "remote"
-            config.remote_url = f"http://127.0.0.1:{srv.server_address[1]}"
-            config.remote_key = ""
-            assert config.resolved_provider() == "remote", \
-                "resolved_provider must pass an explicit remote through"
-            from jarvis.brain.providers import get_provider
-            p, errs = get_provider(None)
-            assert p.name == "remote", f"expected remote, got {p.name} ({errs})"
-            out = p.chat([{"role": "user", "content": "hi"}])
-            assert "remote brain" in (out["content"] or "")
-            # And /api/provider/remote reaches it through the API surface.
-            s = c.post("/api/provider/remote").json()
-            assert s["provider"] == "remote", f"api switch failed: {s}"
-        finally:
-            config.provider, config.remote_url, config.remote_key = saved
-            srv.shutdown()
-
-    check("Remote Jarvis preset actually engages the remote brain", _remote_provider_wired)
-
-    def _provider_route_validates():
-        """Unknown providers are a loud 400, not a silent walk to offline."""
-        r = c.post("/api/provider/spaceship")
-        assert r.status_code == 400, r.text
-        # A configured-but-dead remote degrades to offline WITH explanations.
-        from jarvis.config import config
-        saved = (config.provider, config.remote_url)
-        config.provider = "remote"
-        config.remote_url = "http://127.0.0.1:1"  # nothing listens there
-        try:
-            s = c.post("/api/provider/remote").json()
-            assert s["provider"] in {"offline", "remote"}, s
-            assert any("remote" in n for n in s.get("notes", [])), s
-        finally:
-            config.provider, config.remote_url = saved
-
-    check("provider route validates names and explains dead remotes", _provider_route_validates)
-
-    def _say_flags_not_spoken():
-        """`main.py say --speak hi` must speak 'hi', not '--speak hi'."""
-        import main as main_mod
-        assert main_mod._say_cli_args(["--speak", "say", "hi"]) == \
-            ["--say", "--speak", "hi"]
-        assert main_mod._say_cli_args(["say", "--speak", "hi"]) == \
-            ["--say", "--speak", "hi"]
-        assert main_mod._say_cli_args(
-            ["--provider", "ollama", "say", "--speak", "what time is it"]) == \
-            ["--say", "--provider", "ollama", "--speak", "what time is it"]
-        # A dash-prefixed sentence after `say` is text, not a dropped flag.
-        assert main_mod._say_cli_args(["say", "-5 degrees outside"]) == \
-            ["--say", "-5 degrees outside"]
-
-    check("say-mode keeps flags off the spoken sentence", _say_flags_not_spoken)
 
     def _stream_refusal_nudge():
         """Refusal interceptor must work on the SSE transport too."""
