@@ -45,6 +45,20 @@ def get_agent() -> Agent:
     return _agent
 
 
+def warm_agent() -> None:
+    """Build the lazy Agent before the UI asks.
+
+    Agent() probes LLM providers (Ollama reachability etc.); doing that on the
+    UI's first /api/status leaves a freshly-painted window sitting on BOOTING
+    for seconds. The desktop launcher pre-warms in a daemon thread during the
+    early-boot phase so the first status answers instantly.
+    """
+    try:
+        get_agent()
+    except Exception:  # noqa: BLE001 - a warm-up failure must never crash boot
+        pass
+
+
 state.bump_boot()
 
 
@@ -603,7 +617,12 @@ def reset() -> Dict[str, Any]:
 
 @app.post("/api/provider/{name}")
 def set_provider(name: str) -> Dict[str, Any]:
-    return get_agent().reload_provider(name)
+    if str(name).lower() not in {"auto", "ollama", "openai", "remote", "offline"}:
+        raise HTTPException(
+            400,
+            "provider must be auto, ollama, openai, remote or offline",
+        )
+    return get_agent().reload_provider(str(name).lower())
 
 
 # ------------------------------------------------------------- telemetry ---
@@ -653,10 +672,14 @@ def get_llms() -> Dict[str, Any]:
 # ------------------------------------------------------------- watcher -----
 @app.get("/api/watch")
 def get_watch() -> Dict[str, Any]:
-    """Proof the eyes are on: what's enabled, the live focus, the shot reel."""
+    """Proof the eyes are on: what's enabled, the live focus, today's time per
+    app, and the shot reel. Only what the panel can render — never the full
+    ledger."""
     from .observe import (observer_enabled, shots_enabled, typed_log_enabled,
-                          active_window, _shots_dir, autolock_enabled, clipboard_enabled)
-    app_name, title = observer_enabled() and active_window() or ("", "")
+                          current_focus, autolock_enabled, clipboard_enabled,
+                          _shots_dir)
+    on = observer_enabled()
+    focus = current_focus() if on else {}
     shots_dir = _shots_dir()
     reels = sorted(shots_dir.glob("shot-*.png"))
     shots = []
@@ -672,15 +695,18 @@ def get_watch() -> Dict[str, Any]:
                       "at": shot_stat.st_mtime})
     # Ask the state store for only what the panel can render; copying the full
     # 4,000-event ledger on every poll made this endpoint needlessly expensive.
-    activity = state.get_activity(limit=14)
+    activity = state.get_activity(limit=20)
     return {
-        "observer": observer_enabled(), "shots_on": shots_enabled(),
+        "observer": on, "shots_on": shots_enabled(),
         "typed_on": typed_log_enabled(), "autolock": autolock_enabled(),
         "clipboard_on": clipboard_enabled(),
         "clipboard_recent": state.get_clipboard(limit=6),
         "autolock_minutes": config.autolock_minutes, "poll": config.observe_poll,
         "shot_interval": config.shot_interval,
-        "focused": {"app": app_name, "title": title},
+        "focused": {"app": focus.get("app", ""), "title": focus.get("title", "")},
+        "focus_since": focus.get("since") or 0,
+        "usage_today": state.usage_today(limit=8) if on else [],
+        "history_days": state.usage_days_count(),
         "activity": activity,
         "shots": shots, "shots_total": len(reels),
     }
@@ -714,6 +740,110 @@ class KeyTestIn(BaseModel):
     api_key: str
     base_url: str = "https://api.groq.com/openai/v1"
     model: str = "llama-3.3-70b-versatile"
+
+
+@app.get("/api/providers/diagnose")
+def diagnose_providers() -> Dict[str, Any]:
+    """Why is the brain not answering? Live, read-only health of every
+    candidate: short HTTP probes with tight timeouts — no state touched."""
+    import time as _t
+    import requests as _req
+
+    out = []
+    # Local Ollama
+    t0 = _t.time()
+    try:
+        r = _req.get(f"{config.ollama_host}/api/tags", timeout=3)
+        if r.status_code == 200:
+            ids = [m.get("name") for m in (r.json().get("models") or [])
+                   if isinstance(m, dict) and m.get("name")][:6]
+            detail = f"reachable · {len(ids)} model(s)"
+            if ids:
+                detail += ": " + ", ".join(ids)
+        else:
+            detail = f"HTTP {r.status_code}"
+    except Exception as exc:
+        detail = f"unreachable ({type(exc).__name__})"
+    out.append({"name": "Ollama (local)", "kind": "local",
+                "ok": detail.startswith("reachable"),
+                "latency_ms": int((_t.time() - t0) * 1000), "detail": detail})
+
+    # Cloud (Groq / OpenAI-compatible)
+    base = (config.openai_base_url or "").rstrip("/")
+    key = (config.openai_api_key or "").strip()
+    if not key:
+        out.append({"name": "Cloud (Groq/OpenAI)", "kind": "cloud",
+                    "ok": False, "latency_ms": 0,
+                    "detail": "no API key set — paste one in Settings → Brain, "
+                              "or use the 'Arm the second mind' box."})
+    else:
+        t0 = _t.time()
+        try:
+            r = _req.get(f"{base}/models",
+                         headers={"Authorization": f"Bearer {key}"}, timeout=8)
+            ms = int((_t.time() - t0) * 1000)
+            if r.status_code == 200:
+                ids = [m.get("id") for m in (r.json().get("data") or [])
+                       if isinstance(m, dict) and m.get("id")]
+                want = config.openai_model
+                detail = f"key works · {len(ids)} model(s)"
+                if ids:
+                    if want in ids:
+                        detail += f" · '{want}' is live"
+                    else:
+                        detail += (f" · configured '{want}' is NOT on this "
+                                   "endpoint — Jarvis auto-picks one on the "
+                                   "first request")
+                out.append({"name": "Cloud (Groq/OpenAI)", "kind": "cloud",
+                            "ok": True, "latency_ms": ms, "detail": detail})
+            elif r.status_code in (401, 403):
+                out.append({"name": "Cloud (Groq/OpenAI)", "kind": "cloud",
+                            "ok": False, "latency_ms": ms,
+                            "detail": f"key REJECTED ({r.status_code}) — "
+                                      "generate a new key, then purge the dead "
+                                      "credential in Settings if it's listed."})
+            else:
+                out.append({"name": "Cloud (Groq/OpenAI)", "kind": "cloud",
+                            "ok": False, "latency_ms": ms,
+                            "detail": f"HTTP {r.status_code}: {r.text[:120]}"})
+        except Exception as exc:
+            out.append({"name": "Cloud (Groq/OpenAI)", "kind": "cloud",
+                        "ok": False, "latency_ms": 0,
+                        "detail": f"unreachable ({type(exc).__name__}: "
+                                  f"{str(exc)[:100]})"})
+
+    # Remote Jarvis
+    url = (config.remote_url or "").strip()
+    if not url:
+        out.append({"name": "Remote Jarvis", "kind": "remote",
+                    "ok": False, "latency_ms": 0,
+                    "detail": "JARVIS_REMOTE_URL is empty — Remote preset not "
+                              "in use."})
+    else:
+        t0 = _t.time()
+        try:
+            r = _req.get(f"{url.rstrip('/')}/api/status",
+                         headers={"X-Jarvis-Key": (config.remote_key or "").strip()},
+                         timeout=5)
+            ms = int((_t.time() - t0) * 1000)
+            if r.status_code == 200:
+                st = r.json()
+                out.append({"name": "Remote Jarvis", "kind": "remote",
+                            "ok": True, "latency_ms": ms,
+                            "detail": f"{st.get('provider', '?')} @ "
+                                      f"{st.get('hostname', 'remote')} "
+                                      f"({st.get('model', '?')})"})
+            else:
+                out.append({"name": "Remote Jarvis", "kind": "remote",
+                            "ok": False, "latency_ms": ms,
+                            "detail": f"HTTP {r.status_code} — pairing key "
+                                      "locked?" if r.status_code in (401, 403)
+                            else f"HTTP {r.status_code}"})
+        except Exception as exc:
+            out.append({"name": "Remote Jarvis", "kind": "remote",
+                        "ok": False, "latency_ms": 0,
+                        "detail": f"unreachable ({type(exc).__name__})"})
+    return {"providers": out}
 
 
 @app.post("/api/providers/test_key")

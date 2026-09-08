@@ -38,9 +38,11 @@ _POISONED: set = set()  # provider names that AUTH-FAILED this session
 _THROTTLED: dict = {}  # provider -> epoch when its rate-limit cooldown ends
 
 
-def throttle(name: str, reason: str = "rate limit", cooldown: int = 900) -> None:
+def throttle(name: str, reason: str = "rate limit", cooldown: int = 300) -> None:
     """429s aren't crimes (free tiers throttle mid-conversation) — bench that
-    provider for the cooldown; it walks back on alone when the clock runs out."""
+    provider for the cooldown; it walks back on alone when the clock runs out.
+    Cloud free tiers (Groq) usually recover within a minute or two, so the
+    bench is a short breather, not a 15-minute exile."""
     import time as _t
     if _THROTTLED.get(name, 0) > _t.time():
         return
@@ -171,8 +173,12 @@ class OpenAIProvider:
             ids = [m.get("id", "") for m in r.json().get("data", [])]
         except Exception:
             return None
-        ids = [i for i in ids if i and "whisper" not in i and "guard" not in i
-               and "tts" not in i]
+        # Only chat-capable text models belong in the lineup: Groq lists
+        # whisper/tts/guard/embedding/audio side-models that cannot answer chat.
+        _SKIP = ("whisper", "guard", "tts", "stt", "embed", "rerank",
+                 "audio", "realtime", "moderation")
+        ids = [i for i in ids
+               if i and not any(s in i.lower() for s in _SKIP)]
         if not ids:
             return None
 
@@ -227,6 +233,13 @@ class OpenAIProvider:
                         "Content-Type": "application/json",
                     },
                     json=payload, timeout=90, stream=stream)
+                # The healed retry must be validated too: a second failure
+                # used to fall through as an EMPTY answer ("Done.") — the
+                # cloud said nothing and Jarvis pretended it had.
+                if r.status_code >= 400:
+                    raise ProviderError(
+                        f"Cloud still refuses after model heal ({r.status_code}): "
+                        f"{r.text[:160]}")
             else:
                 raise ProviderError(f"Cloud says model is gone and lists nothing else: {r.text[:160]}")
         if r.status_code == 401:
@@ -827,7 +840,8 @@ def get_provider(force: Optional[str] = None):
                     if getattr(only, "note", None):
                         errors.append(only.note)
                     return only, errors
-                continue
+                continue  # neither local nor cloud → fall through to remote/openai/offline
+            if candidate == "remote":
                 provider = RemoteJarvisProvider()
                 if getattr(provider, "note", None):
                     errors.append(provider.note)

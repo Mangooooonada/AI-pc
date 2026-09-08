@@ -39,8 +39,7 @@ def main() -> int:
     if mode == "say":
         from jarvis.cli import main as cli_main
 
-        idx = args.index(positional[0])
-        return cli_main(["--say"] + args[idx + 1:])
+        return cli_main(_say_cli_args(args))
 
     if mode in {"web", "server", "browser"}:
         from jarvis.config import config
@@ -66,6 +65,44 @@ def main() -> int:
 
     print(__doc__)
     return 1
+
+
+def _say_cli_args(args: list) -> list:
+    """cli_main argv for one-shot `say`.
+
+    The words after the `say` mode word are the sentence, but app flags may
+    sit on either side of it — `--speak` and `--provider NAME` must steer the
+    reply, never be spoken as part of the sentence. (Previously a flag before
+    `say` was silently dropped and one after it became literal text.)
+    """
+    out: list = ["--say"]
+    text: list = []
+    seen_mode = False
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if not seen_mode and not a.startswith("-"):
+            seen_mode = True  # the `say` mode word itself
+            i += 1
+            continue
+        if a == "--provider" and i + 1 < len(args):
+            out += ["--provider", args[i + 1]]
+            i += 2
+            continue
+        if a == "--speak":
+            out.append(a)
+            i += 1
+            continue
+        if a.startswith("-"):
+            if not seen_mode:
+                i += 1  # other app flag before `say` — cli_main doesn't need it
+                continue
+            text.append(a)  # text after `say` may legitimately start with '-'
+            i += 1
+            continue
+        text.append(a)
+        i += 1
+    return out + text
 
 
 def _crash_report(exc: BaseException) -> None:
