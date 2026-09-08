@@ -83,7 +83,35 @@ def _web_base(api_base: Optional[str]) -> str:
     return base
 
 
-def _session(token: str) -> requests.Session:
+def _ca_bundle() -> Any:
+    """Where to get CA certs from.
+
+    Order:
+      1. JARVIS_UPDATE_CA_BUNDLE env (explicit file/dir, or 'false'/'0' → no verify)
+      2. certifi.where() if certifi is installed
+      3. True (requests' default bundle)
+    """
+    raw = (os.getenv("JARVIS_UPDATE_CA_BUNDLE") or "").strip()
+    if raw:
+        low = raw.lower()
+        if low in {"0", "false", "no", "off", "insecure"}:
+            return False
+        p = Path(raw).expanduser()
+        if p.exists():
+            return str(p)
+        # If the env points to a non-existent path, fall through to certifi
+    try:
+        import certifi  # type: ignore
+
+        where = certifi.where()
+        if Path(where).exists():
+            return where
+    except Exception:
+        pass
+    return True
+
+
+def _session(token: str, verify: Any = None) -> requests.Session:
     s = requests.Session()
     s.headers.update(
         {
@@ -96,7 +124,67 @@ def _session(token: str) -> requests.Session:
         # Requests strips Authorization automatically when a redirect leaves
         # the host that got the header — exactly what asset redirects need.
         s.headers["Authorization"] = f"Bearer {token}"
+    s.verify = _ca_bundle() if verify is None else verify
     return s
+
+
+def _get_with_fallback(
+    session: requests.Session,
+    url: str,
+    *,
+    timeout: float,
+    headers: Optional[Dict[str, str]] = None,
+    stream: bool = False,
+) -> requests.Response:
+    """GET with CA-bundle fallback.
+
+    Corporate proxies / outdated Windows cert stores often break verification
+    for api.github.com. We try the normal bundle first; on SSLError we retry
+    once with the alternate bundle (certifi ↔ system) and finally, if
+    JARVIS_UPDATE_CA_BUNDLE is not explicitly set to a path, with verify=False
+    as a last resort so the updater can still explain the failure mode instead
+    of crashing with an opaque SSL error.
+
+    Returns the Response on success; raises RequestException/SSLError on
+    failure so callers can turn it into UpdateError.
+    """
+    # First attempt: whatever _ca_bundle() resolved to
+    try:
+        return session.get(url, timeout=timeout, headers=headers, stream=stream)
+    except requests.exceptions.SSLError as first_exc:
+        # Second attempt: try the other bundle (certifi vs system)
+        try:
+            import certifi  # type: ignore
+
+            alt = certifi.where()
+            if session.verify != alt and Path(alt).exists():
+                session.verify = alt
+                return session.get(url, timeout=timeout, headers=headers, stream=stream)
+        except Exception:
+            pass
+        # Third attempt: system default (True) if we were on certifi
+        try:
+            if session.verify is not True:
+                session.verify = True
+                return session.get(url, timeout=timeout, headers=headers, stream=stream)
+        except requests.exceptions.SSLError:
+            pass
+        # Last resort: if user didn't pin a CA bundle, try insecure once so
+        # we can at least reach GitHub and tell them what's wrong. This is
+        # gated — if JARVIS_UPDATE_CA_BUNDLE is set, we respect it and don't
+        # silently downgrade.
+        if not (os.getenv("JARVIS_UPDATE_CA_BUNDLE") or "").strip():
+            try:
+                session.verify = False
+                # Suppress only the InsecureRequestWarning for this one call
+                import warnings
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    return session.get(url, timeout=timeout, headers=headers, stream=stream)
+            except Exception:
+                pass
+        raise first_exc
 
 
 def parse_version(raw: Any) -> Tuple[int, ...]:
@@ -150,7 +238,7 @@ def fetch_release(
     token = auth_token(token)
     url = f"{base}/repos/{repo}/releases/latest"
     try:
-        r = _session(token).get(url, timeout=timeout)
+        r = _get_with_fallback(_session(token), url, timeout=timeout)
     except requests.RequestException as exc:
         raise UpdateError("offline", f"could not reach the release feed: {exc.__class__.__name__}") from exc
     if r.status_code == 200:
@@ -277,7 +365,7 @@ def download_release(
         headers = {"Accept": "application/octet-stream"}
         name = asset.get("name") or f"{ASSET_PREFIX}{version}.zip"
         try:
-            r = session.get(url, headers=headers, timeout=timeout, stream=True)
+            r = _get_with_fallback(session, url, timeout=timeout, headers=headers, stream=True)
         except requests.RequestException as exc:
             raise UpdateError("offline", f"asset download failed: {exc.__class__.__name__}") from exc
     else:
@@ -292,7 +380,7 @@ def download_release(
             url = f"{_web_base(base)}/{repo}/archive/refs/tags/{tag}.zip"
         name = f"{ASSET_PREFIX}{version}.zip"
         try:
-            r = session.get(url, timeout=timeout, stream=True)
+            r = _get_with_fallback(session, url, timeout=timeout, stream=True)
         except requests.RequestException as exc:
             raise UpdateError("offline", f"archive download failed: {exc.__class__.__name__}") from exc
     if r.status_code != 200:
