@@ -44,7 +44,11 @@ def main() -> int:
     c = TestClient(app)
     routes = [getattr(r, "path", "") for r in app.routes
               if "GET" in (getattr(r, "methods", set()) or set())]
-    get_routes = [p for p in routes if "{" not in p and "stream" not in p]
+    # Skip parameterised paths, the SSE stream, and the update probe: the
+    # updater performs live network I/O by design and is tested hermetically
+    # by tests/update_sim.py against a fake GitHub instead.
+    get_routes = [p for p in routes
+                  if "{" not in p and "stream" not in p and "update" not in p]
 
     check(f"all {len(get_routes)} GET routes answer <500",
           lambda: [_ for _ in get_routes if c.get(_).status_code >= 500] == []

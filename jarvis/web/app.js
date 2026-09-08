@@ -276,6 +276,16 @@ async function loadSettings() {
     ${netQr}
   </div><p class="st-note" style="margin-top:8px">Closing the window hides Jarvis to the <b>system tray</b> (quit from its icon). <b>Ctrl+J</b> summons Jarvis from anywhere. Theme, colours, glow and layout live in the <b>Interface Studio</b> (top right button).</p></div>`);
 
+  // In-app updater: probes GitHub Releases. Anonymous works while the repo
+  // is public; once it goes private the server authenticates with the
+  // JARVIS_UPDATE_TOKEN it reads from .env — the UI never sees the token.
+  chunks.push(`<div class="st-group"><h3>UPDATES</h3><div class="st-rows">
+    <label class="st-ctl"><span>Jarvis <b id="upd-current">v${esc(String(STATUS.version || ""))}</b> — check GitHub for a newer release</span>
+      <button type="button" class="btn-ghost" id="upd-check">Check for updates</button></label>
+    <div class="st-note" id="upd-note" style="margin-top:8px">Anonymous while the repo is public. On a private repo, set <code>JARVIS_UPDATE_TOKEN</code> (a GitHub PAT) in <code>.env</code> so the feed and downloads authenticate.</div>
+    <div id="upd-out"></div>
+  </div></div>`);
+
   // One-click brain presets: fill the Brain section's cloud fields for them.
   const presets = [
     ["⚡ Groq as the CASCADE-brain (free)", "Ollama stays king; Groq answers when it sulks",
@@ -372,6 +382,46 @@ async function loadSettings() {
   if (copyBtn) copyBtn.onclick = async () => {
     try { await navigator.clipboard.writeText(netState.url); toast("Link copied — open it on your phone."); }
     catch { toast(netState.url); }
+  };
+
+  const updCheck = $("#upd-check");
+  if (updCheck) updCheck.onclick = async () => {
+    const note = $("#upd-note"), out = $("#upd-out"), btn = updCheck;
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = "Checking…";
+    let d;
+    try { d = await api("/api/update/check", { timeout: 25000 }); }
+    catch { d = { ok: false, error: "could not reach Jarvis" }; }
+    btn.disabled = false; btn.textContent = "Check for updates";
+    if (!d.ok) {
+      note.textContent = "✘ " + (d.error || "check failed");
+      out.innerHTML = "";
+      return;
+    }
+    const cur = "v" + (d.current_version || "?"), lat = "v" + (d.latest_version || "?");
+    note.textContent = d.update_available
+      ? `A newer build exists: ${lat} — you run ${cur}.`
+      : `You're on the newest build (${lat}).`;
+    out.innerHTML = d.update_available
+      ? `<button type="button" class="btn-ghost" id="upd-apply" style="margin:6px 0">Download & install ${lat}</button>
+         <div class="st-note">Code files are swapped with a timestamped backup beside the app folder; <code>.env</code> and your data are never touched. Relaunch Jarvis when it finishes.</div>`
+      : "";
+    const applyBtn = $("#upd-apply");
+    if (applyBtn) applyBtn.onclick = async () => {
+      applyBtn.disabled = true; applyBtn.textContent = "Downloading & installing…";
+      let r;
+      try { r = await post("/api/update/apply"); }
+      catch { r = { ok: false, error: "could not reach Jarvis" }; }
+      applyBtn.disabled = false;
+      if (r.ok) {
+        note.textContent = `✔ ${r.note || "installed"} Relaunch Jarvis to run ${lat}.`;
+        out.innerHTML = "";
+        toast(`Updated to ${lat} — relaunch Jarvis.`);
+      } else {
+        note.textContent = "✘ " + (r.error || "install failed");
+        applyBtn.textContent = `Download & install ${lat}`;
+      }
+    };
   };
 
   const groqGet = $("#groq-get");
