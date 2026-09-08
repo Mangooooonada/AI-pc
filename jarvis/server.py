@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from . import agents as agents_mod
 from . import state
 from . import updater
+from . import activity_log as activity_log_mod
 from .brain import Agent
 from .config import config, update_env_file
 from .skills import REGISTRY, run_skill
@@ -143,6 +144,14 @@ def chat(body: ChatIn) -> Dict[str, Any]:
         ag.reload_provider(body.provider)
     turn = ag.ask(body.message)
     state.log_turn(body.message, turn.reply, turn.actions, turn.provider)
+    try:
+        activity_log_mod.log_event(
+            "chat",
+            (body.message or "")[:120],
+            {"provider": turn.provider, "actions": len(turn.actions or [])},
+        )
+    except Exception:
+        pass
     return {
         "reply": turn.reply,
         "actions": turn.actions,
@@ -176,6 +185,14 @@ def chat_stream(body: ChatIn) -> StreamingResponse:
                 on_token=lambda tok: events.put(("token", {"text": tok})),
             )
             state.log_turn(body.message, turn.reply, turn.actions, turn.provider)
+            try:
+                activity_log_mod.log_event(
+                    "chat",
+                    (body.message or "")[:120],
+                    {"provider": turn.provider, "stream": True, "actions": len(turn.actions or [])},
+                )
+            except Exception:
+                pass
             events.put(
                 (
                     "done",
@@ -208,7 +225,12 @@ def chat_stream(body: ChatIn) -> StreamingResponse:
 
 @app.post("/api/skill")
 def run_one(body: SkillIn) -> Dict[str, Any]:
-    return {"result": run_skill(body.name, body.arguments)}
+    res = run_skill(body.name, body.arguments)
+    try:
+        activity_log_mod.log_event("skill", body.name, {"arguments": str(body.arguments)[:200]})
+    except Exception:
+        pass
+    return {"result": res}
 
 
 # --------------------------------------------------------------- settings --
@@ -1092,6 +1114,18 @@ def get_audit(limit: int = 100, kind: str = "") -> Dict[str, Any]:
     return {"entries": state.list_audit(limit=limit, kind=kind)}
 
 
+@app.get("/api/activity/log")
+def get_activity_log(limit: int = 100, kind: str = "") -> Dict[str, Any]:
+    """Human-readable activity log (chat, skills, system)."""
+    return {"entries": state.get_activity_log(limit=limit, kind=kind)}
+
+
+@app.delete("/api/activity/log")
+def clear_activity_log() -> Dict[str, Any]:
+    state.clear_activity_log()
+    return {"ok": True}
+
+
 @app.delete("/api/conversations")
 def clear_conversations() -> Dict[str, Any]:
     state.clear_conversations()
@@ -1240,6 +1274,20 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
             atexit.register(lambda: wipe_observer_shots("app exit"))
     except Exception:
         pass
+
+    # Best-effort Ollama auto-start on every backend boot (not just desktop).
+    # Fresh Windows boot often has Ollama installed but not running — without
+    # this, Jarvis lands on the offline keyword brain until someone remembers
+    # to open Ollama. This is cheap (one HTTP probe + maybe a Popen) and runs
+    # in a daemon thread so it never blocks boot.
+    def _maybe_autostart_ollama():
+        try:
+            from .config import config as _cfg
+            _cfg.ensure_ollama_running(wait=True, timeout=8.0)
+        except Exception:
+            pass
+
+    threading.Thread(target=_maybe_autostart_ollama, daemon=True, name="ollama-autostart").start()
 
     global _watcher_started
     if not _watcher_started:

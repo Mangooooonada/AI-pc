@@ -350,9 +350,24 @@ class OllamaProvider:
         # Dual-brain routing cache: is OLLAMA_MODEL_BIG installed?
         self._big_ok: Optional[bool] = None
         if not config.ollama_available():
-            raise ProviderError(
-                f"Ollama isn't reachable at {self.host}. Start it with 'ollama serve'."
-            )
+            # Best-effort auto-start: fresh Windows boot often has Ollama
+            # installed but not running. Try to start it once before giving up.
+            try:
+                if config.ensure_ollama_running(wait=True, timeout=6.0):
+                    self.note = "ollama: auto-started on demand"
+                else:
+                    # One more probe without auto-start to avoid infinite loop
+                    if not config.ollama_available():
+                        raise ProviderError(
+                            f"Ollama isn't reachable at {self.host}. Start it with 'ollama serve'."
+                        )
+            except ProviderError:
+                raise
+            except Exception:
+                if not config.ollama_available():
+                    raise ProviderError(
+                        f"Ollama isn't reachable at {self.host}. Start it with 'ollama serve'."
+                    )
         installed = config.ollama_models()
         if not installed:
             return  # can't list models — assume the configured one will work

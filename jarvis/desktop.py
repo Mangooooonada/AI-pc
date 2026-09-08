@@ -367,40 +367,116 @@ Defender's exclusion list (Defender scans every file on boot otherwise).</div>
 </div></body></html>"""
 
 
-def _ensure_ollama_running() -> None:
+def _find_ollama_exe() -> Optional[str]:
+    """Locate the ollama binary across common install locations."""
+    import shutil
+
+    exe = shutil.which("ollama")
+    if exe and Path(exe).exists():
+        return exe
+    candidates = []
+    if os.name == "nt":
+        candidates.extend([
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Ollama\ollama.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Ollama\ollama.exe"),
+            r"C:\Ollama\ollama.exe",
+        ])
+    else:
+        candidates.extend([
+            "/usr/local/bin/ollama",
+            "/opt/ollama/bin/ollama",
+            os.path.expanduser("~/.ollama/bin/ollama"),
+            "/usr/bin/ollama",
+        ])
+    for c in candidates:
+        try:
+            if c and Path(c).exists():
+                return c
+        except Exception:
+            continue
+    return None
+
+
+def _ensure_ollama_running(wait: bool = True, timeout: float = 10.0) -> bool:
     """Ollama installed but not serving? Start it — quietly, best effort.
 
     Without this, launching Jarvis on a fresh Windows boot lands on the
     offline keyword brain until someone remembers to open Ollama.
+
+    Returns True if Ollama is reachable after the attempt (or was already).
+    On Windows, tries ``ollama serve`` first (headless, most reliable), then
+    ``ollama app`` (GUI bundle that also serves) as fallback. On Unix, ``serve``.
+    After spawning, polls for up to ``timeout`` seconds so the next provider
+    probe sees a live server instead of still reporting offline.
     """
     try:
-        import shutil
+        if config.ollama_available():
+            return True
+
+        exe = _find_ollama_exe()
+        if not exe:
+            logger.info("ollama auto-start: binary not found in PATH or common locations")
+            return False
+
         import subprocess
 
-        if config.ollama_available():
-            return
-        exe = shutil.which("ollama")
-        if not exe and os.name == "nt":
-            candidate = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")
-            exe = candidate if os.path.exists(candidate) else None
-        if not exe:
-            return  # not installed — nothing to start
-        logger.info("ollama is installed but not running; starting it")
+        logger.info("ollama is installed but not running; starting it via %s", exe)
+
+        # Try serve first (works everywhere, no GUI)
+        tried = []
         if os.name == "nt":
-            subprocess.Popen(
-                [exe, "app"],
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                | getattr(subprocess, "DETACHED_PROCESS", 0),
-            )
+            # On Windows, 'ollama serve' is headless; 'ollama app' starts the
+            # GUI tray app which also serves. Try both.
+            for args in ([exe, "serve"], [exe, "app"]):
+                try:
+                    subprocess.Popen(
+                        args,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                        | getattr(subprocess, "DETACHED_PROCESS", 0),
+                    )
+                    tried.append(" ".join(args))
+                    break
+                except Exception as e:
+                    logger.debug("ollama start attempt %s failed: %s", args, e)
+                    continue
         else:
-            subprocess.Popen(
-                [exe, "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            try:
+                subprocess.Popen(
+                    [exe, "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                tried.append(f"{exe} serve")
+            except Exception as e:
+                logger.debug("ollama serve failed: %s", e)
+
+        if not tried:
+            logger.warning("ollama auto-start: all spawn attempts failed")
+            return False
+
+        if not wait:
+            return False  # we started it, but caller doesn't want to block
+
+        # Poll for availability
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(0.5)
+            try:
+                if config.ollama_available():
+                    logger.info("ollama auto-start: now reachable (via %s)", tried[0])
+                    return True
+            except Exception:
+                pass
+
+        logger.info("ollama auto-start: spawned %s but still not reachable after %.0fs",
+                    tried[0], timeout)
+        return False
+
     except Exception as exc:
         logger.warning("couldn't auto-start ollama: %s", exc)
+        return False
 
 
 def _tk_boot_splash():

@@ -10,7 +10,7 @@ import platform
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 if getattr(sys, "frozen", False):
     # Packaged with PyInstaller: settings live next to JARVIS.exe.
@@ -258,6 +258,84 @@ class Config:
             ]
         except Exception:
             return []
+
+    def _find_ollama_exe(self) -> Optional[Path]:
+        """Locate ollama binary (same logic as desktop launcher)."""
+        import shutil
+
+        exe = shutil.which("ollama")
+        if exe and Path(exe).exists():
+            return Path(exe)
+        candidates = []
+        if os.name == "nt":
+            candidates.extend([
+                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+                os.path.expandvars(r"%PROGRAMFILES%\Ollama\ollama.exe"),
+                r"C:\Ollama\ollama.exe",
+            ])
+        else:
+            candidates.extend([
+                "/usr/local/bin/ollama",
+                "/opt/ollama/bin/ollama",
+                os.path.expanduser("~/.ollama/bin/ollama"),
+                "/usr/bin/ollama",
+            ])
+        for c in candidates:
+            try:
+                p = Path(c)
+                if p.exists():
+                    return p
+            except Exception:
+                continue
+        return None
+
+    def ensure_ollama_running(self, wait: bool = True, timeout: float = 8.0) -> bool:
+        """Try to auto-start Ollama if it's installed but not serving.
+
+        Respects JARVIS_OLLAMA_AUTOSTART env (default true). Returns True if
+        reachable after the attempt.
+        """
+        if not _bool("JARVIS_OLLAMA_AUTOSTART", True):
+            return self.ollama_available()
+        if self.ollama_available():
+            return True
+        exe = self._find_ollama_exe()
+        if not exe:
+            return False
+        try:
+            import subprocess
+            import time
+
+            # Spawn detached
+            if os.name == "nt":
+                # Try serve first, then app
+                for args in ([str(exe), "serve"], [str(exe), "app"]):
+                    try:
+                        subprocess.Popen(
+                            args,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                            | getattr(subprocess, "DETACHED_PROCESS", 0),
+                        )
+                        break
+                    except Exception:
+                        continue
+            else:
+                subprocess.Popen(
+                    [str(exe), "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            if not wait:
+                return False
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                time.sleep(0.5)
+                if self.ollama_available():
+                    return True
+            return False
+        except Exception:
+            return False
 
 
 config = Config()

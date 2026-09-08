@@ -22,6 +22,7 @@ DEFAULT: Dict[str, Any] = {
     "memories": [],
     "conversations": [],
     "activity": [],
+    "activity_log": [],
     "usage_days": {},
     "patterns": [],
     "workflows": [],
@@ -690,4 +691,63 @@ def get_typed(limit: int = 3000) -> List[Dict[str, Any]]:
 def clear_typed() -> None:
     with _LOCK:
         _STATE["typed"] = []
+    save()
+
+
+# -------------------------------------------------------- activity log -----
+# A human-readable ledger of what Jarvis *did* (chat turns, skills run,
+# system events). Distinct from the watcher activity (app-focus episodes).
+# Bounded, persisted, and exposed via /api/activity/log for the UI.
+
+_ACTIVITY_LOG_MAX = 1000
+
+
+def add_activity_log(kind: str, message: str, meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Record one user-visible activity event.
+
+    kind: short bucket like 'chat', 'skill', 'system', 'watcher', 'update'.
+    message: human sentence, 1-280 chars.
+    meta: optional extra dict (provider, skill name, etc.) — kept small.
+    """
+    entry = {
+        "id": str(uuid.uuid4())[:8],
+        "at": _now(),
+        "kind": (kind or "system").strip()[:32] or "system",
+        "message": (message or "").strip()[:280],
+    }
+    if meta:
+        try:
+            # Keep it JSON-safe and bounded
+            entry["meta"] = json.loads(json.dumps(meta))  # type: ignore
+            # Trim any huge values
+            for k in list(entry["meta"].keys()):
+                v = entry["meta"][k]
+                if isinstance(v, str) and len(v) > 400:
+                    entry["meta"][k] = v[:400] + "…"
+        except Exception:
+            entry["meta"] = {"raw": str(meta)[:400]}
+    if not entry["message"]:
+        return entry
+    with _LOCK:
+        log = _STATE.setdefault("activity_log", [])
+        log.append(entry)
+        if len(log) > _ACTIVITY_LOG_MAX:
+            _STATE["activity_log"] = log[-_ACTIVITY_LOG_MAX:]
+    save()
+    return entry
+
+
+def get_activity_log(limit: int = 100, kind: str = "") -> List[Dict[str, Any]]:
+    with _LOCK:
+        rows = list(_STATE.setdefault("activity_log", []))
+    if kind:
+        k = kind.strip().lower()
+        rows = [r for r in rows if (r.get("kind") or "").lower() == k]
+    # newest first for the UI
+    return list(reversed(rows))[: max(1, min(limit, 500))]
+
+
+def clear_activity_log() -> None:
+    with _LOCK:
+        _STATE["activity_log"] = []
     save()
