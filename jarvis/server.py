@@ -1275,6 +1275,20 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     except Exception:
         pass
 
+    # Best-effort Ollama auto-start on every backend boot (not just desktop).
+    # Fresh Windows boot often has Ollama installed but not running — without
+    # this, Jarvis lands on the offline keyword brain until someone remembers
+    # to open Ollama. This is cheap (one HTTP probe + maybe a Popen) and runs
+    # in a daemon thread so it never blocks boot.
+    def _maybe_autostart_ollama():
+        try:
+            from .config import config as _cfg
+            _cfg.ensure_ollama_running(wait=True, timeout=8.0)
+        except Exception:
+            pass
+
+    threading.Thread(target=_maybe_autostart_ollama, daemon=True, name="ollama-autostart").start()
+
     global _watcher_started
     if not _watcher_started:
         _watcher_started = True
