@@ -330,7 +330,7 @@ class Config:
                 return False
             deadline = time.time() + timeout
             while time.time() < deadline:
-                time.sleep(0.5)
+                time.sleep(0.3)
                 if self.ollama_available():
                     return True
             return False

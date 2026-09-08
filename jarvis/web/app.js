@@ -863,9 +863,11 @@ setInterval(() => {  // light, deduplicated refresh while you're on the view
   if ($$(".view.active")[0]?.dataset.view === "watcher") loadWatch();
 }, 10000);
 
+let _statusRetry = null;
 async function loadStatus() {
   try {
     STATUS = await api("/api/status", { timeout: 15000 });
+    if (_statusRetry) { clearTimeout(_statusRetry); _statusRetry = null; }
   (STATUS.alerts || []).forEach((a) => {
     toast(`🔔 ${a.text}`, "good");
     if (SPEAK_BACK) say(a.text);
@@ -912,10 +914,27 @@ async function loadStatus() {
     // on a null deref and "LINK DOWN" sticks forever), and never paint inline
     // colors (they'd beat the .warn class on recovery).
     const st = document.querySelector("#sys-state");
-    if (st) st.textContent = "LINK DOWN — retrying";
     const pill = document.querySelector("#sys-pill");
-    if (pill) pill.classList.add("warn");
+    // Try a super-light health probe to distinguish 'backend dead' vs 'brain warming'
+    try {
+      const h = await api("/api/health", { timeout: 4000 });
+      if (h && h.ok) {
+        if (st) st.textContent = "WARMING — retrying";
+        if (pill) pill.classList.add("warn");
+      } else {
+        if (st) st.textContent = "LINK DOWN — retrying";
+        if (pill) pill.classList.add("warn");
+      }
+    } catch (_h) {
+      if (st) st.textContent = "LINK DOWN — retrying";
+      if (pill) pill.classList.add("warn");
+    }
     try { post("/api/uierror", { text: "loadStatus: " + (e && e.message || e) }); } catch (_2) {}
+    // Fast retry (2s) instead of waiting 30s for the interval tick — recovers
+    // from a slow first boot (Ollama auto-start can take 3-5s) without user action.
+    if (!_statusRetry) {
+      _statusRetry = setTimeout(() => { _statusRetry = null; loadStatus(); }, 2000);
+    }
   }
 }
 async function loadSystem() {

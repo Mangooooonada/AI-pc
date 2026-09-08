@@ -398,7 +398,7 @@ def _find_ollama_exe() -> Optional[str]:
     return None
 
 
-def _ensure_ollama_running(wait: bool = True, timeout: float = 10.0) -> bool:
+def _ensure_ollama_running(wait: bool = True, timeout: float = 5.0) -> bool:
     """Ollama installed but not serving? Start it — quietly, best effort.
 
     Without this, launching Jarvis on a fresh Windows boot lands on the
@@ -459,10 +459,10 @@ def _ensure_ollama_running(wait: bool = True, timeout: float = 10.0) -> bool:
         if not wait:
             return False  # we started it, but caller doesn't want to block
 
-        # Poll for availability
+        # Poll for availability (fast, so first /api/status isn't stuck)
         deadline = time.time() + timeout
         while time.time() < deadline:
-            time.sleep(0.5)
+            time.sleep(0.3)
             try:
                 if config.ollama_available():
                     logger.info("ollama auto-start: now reachable (via %s)", tried[0])

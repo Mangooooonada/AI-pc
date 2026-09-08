@@ -353,7 +353,7 @@ class OllamaProvider:
             # Best-effort auto-start: fresh Windows boot often has Ollama
             # installed but not running. Try to start it once before giving up.
             try:
-                if config.ensure_ollama_running(wait=True, timeout=6.0):
+                if config.ensure_ollama_running(wait=True, timeout=3.0):
                     self.note = "ollama: auto-started on demand"
                 else:
                     # One more probe without auto-start to avoid infinite loop

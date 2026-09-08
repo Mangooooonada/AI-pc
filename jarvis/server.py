@@ -115,6 +115,21 @@ async def _network_guard(request: Request, call_next):
     return await call_next(request)
 
 
+@app.get("/api/health")
+def health() -> Dict[str, Any]:
+    """Super-lightweight liveness probe — never touches the Agent.
+
+    The dashboard's LINK DOWN state used to stick when /api/status was slow
+    (Agent() probing Ollama + auto-start). This endpoint answers instantly
+    so the frontend can distinguish 'backend dead' from 'brain warming'.
+    """
+    return {
+        "ok": True,
+        "version": __import__("jarvis").__version__,
+        "hostname": __import__("socket").gethostname(),
+    }
+
+
 @app.get("/api/status")
 def status() -> Dict[str, Any]:
     ag = get_agent()
@@ -1283,7 +1298,7 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     def _maybe_autostart_ollama():
         try:
             from .config import config as _cfg
-            _cfg.ensure_ollama_running(wait=True, timeout=8.0)
+            _cfg.ensure_ollama_running(wait=True, timeout=5.0)
         except Exception:
             pass
 
