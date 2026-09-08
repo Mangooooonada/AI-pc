@@ -157,6 +157,10 @@ class Config:
     privacy_mode: str = os.getenv("JARVIS_PRIVACY", "guarded").strip().lower()
     allow_power: bool = _bool("JARVIS_ALLOW_POWER", True)
     allow_shell: bool = _bool("JARVIS_ALLOW_SHELL", False)
+    # In-app updater (Settings → Updates).  Off = Jarvis never fetches or
+    # installs a newer release.  The auth token for private repos is read
+    # straight from JARVIS_UPDATE_TOKEN by jarvis/updater.py.
+    allow_update: bool = _bool("JARVIS_ALLOW_UPDATE", True)
     # Resident-assistant behaviours.
     briefing: bool = _bool("JARVIS_BRIEFING", True)   # morning briefing on first launch of the day
     auto_mem: bool = _bool("JARVIS_AUTO_MEM", True)     # quietly save important personal facts   # morning briefing on first launch of the day

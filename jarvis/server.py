@@ -5,6 +5,7 @@ import json
 import platform
 import queue
 import socket
+import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 
 from . import agents as agents_mod
 from . import state
+from . import updater
 from .brain import Agent
 from .config import config, update_env_file
 from .skills import REGISTRY, run_skill
@@ -656,6 +658,76 @@ def system_metrics() -> Dict[str, Any]:
     except Exception:
         pass
     return data
+
+
+# --------------------------------------------------------------- updates --
+@app.get("/api/update/check")
+def update_check() -> Dict[str, Any]:
+    """Probe GitHub Releases for a newer Jarvis (Settings → Updates).
+
+    Always answers 200 so the dashboard never shows an error storm: when the
+    feed is unreachable or the repo needs a token, the payload carries
+    ``ok: False`` plus a human explanation.  This route performs live network
+    I/O, so tests/smoke_audit.py deliberately skips walking it — the updater
+    itself is exercised hermetically by tests/update_sim.py against a fake
+    GitHub.
+    """
+    if not config.allow_update:
+        return {
+            "ok": False,
+            "kind": "disabled",
+            "error": "updates are off (JARVIS_ALLOW_UPDATE=false in .env)",
+        }
+    return updater.check_for_update(timeout=6.0)
+
+
+@app.post("/api/update/apply")
+def update_apply() -> Dict[str, Any]:
+    """Download the newest release and install it over the app code.
+
+    Deliberately refuses on git checkouts (dev machines update via git) and
+    when updates are disabled.  On a real install the bundle's code files are
+    swapped with a timestamped backup kept beside the app folder; .env and
+    user data are never touched.
+    """
+    if not config.allow_update:
+        return {
+            "ok": False,
+            "kind": "disabled",
+            "error": "updates are off (JARVIS_ALLOW_UPDATE=false in .env)",
+        }
+    info = updater.check_for_update(timeout=8.0)
+    if not info.get("ok"):
+        return info
+    if not info.get("update_available"):
+        return {
+            "ok": False,
+            "kind": "uptodate",
+            "error": f"already on the newest release — v{info.get('current_version')}",
+            "current_version": info.get("current_version"),
+            "latest_version": info.get("latest_version"),
+        }
+    dl_dir = Path(tempfile.gettempdir()) / "jarvis-update-dl"
+    dl_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        zip_path = updater.download_release(info["release"], dest_dir=dl_dir)
+        applied = updater.install_update(zip_path)
+        applied.update(
+            {
+                "version": info.get("latest_version"),
+                "release_url": info.get("release_url"),
+                "note": "installed — relaunch Jarvis to run the new version",
+            }
+        )
+        return applied
+    except updater.UpdateError as exc:
+        return {"ok": False, "kind": exc.kind, "error": exc.message}
+    finally:
+        for leftover in dl_dir.glob("JARVIS-v*.zip"):
+            try:
+                leftover.unlink()
+            except OSError:
+                pass
 
 
 @app.get("/api/agents")

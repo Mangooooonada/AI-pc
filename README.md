@@ -423,6 +423,25 @@ Everything else lives in `.env` (copy from `.env.example`):
 | `JARVIS_OBSERVE_TEXT` | `false` | Observer+: remember typed phrases (sign-in screens auto-pause it) |
 | `JARVIS_OBSERVE_SHOTS` | `false` | Observer+: one screenshot/minute timeline, last 60 kept |
 | `JARVIS_COMPUTER_USE` | `false` | Let Jarvis drive mouse/keyboard after plan approval |
+| `JARVIS_ALLOW_UPDATE` | `true` | In-app updater (Settings → Updates) may check & install releases |
+| `JARVIS_UPDATE_TOKEN` | *(none)* | GitHub PAT (`Contents: read`) — required once the repo is private |
+| `JARVIS_UPDATE_REPO` | `Mangooooonada/AI-pc` | Repo whose GitHub Releases feed the updater reads |
+
+---
+
+## Staying updated
+
+The ⚙ Settings → **Updates** card checks GitHub Releases for a newer Jarvis and
+installs it in one click (code files are swapped, a timestamped backup is kept
+beside the app folder, and `.env` + your data are never touched; dev git
+checkouts are refused so updates never clobber a working tree).
+
+Checks are anonymous, which works while the repo is public. The moment the repo
+goes **private**, set `JARVIS_UPDATE_TOKEN` in `.env` to a GitHub
+[personal access token](https://github.com/settings/tokens?type=beta)
+(fine-grained, **Contents: read** on the repo) — the release feed and asset
+downloads then authenticate with it and the one-click updater keeps working.
+With no token set it simply falls back to anonymous.
 
 ---
 
